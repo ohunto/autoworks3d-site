@@ -3,66 +3,52 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="3D Printed Automotive Solutions - Custom tools, discontinued parts, and professional-grade products for mechanics and car enthusiasts.">
-  <title>AutoWorks3D – Coming Soon</title>
+  <meta name="description" content="Purpose-built 3D-printed automotive solutions. Shop AutoWorks3D for custom tools, discontinued parts, and practical fixes for the real world.">
+  <meta name="theme-color" content="#080c11">
+  <meta property="og:title" content="AutoWorks3D — Purpose-built. Layer by layer.">
+  <meta property="og:description" content="3D-printed automotive solutions. Explore our shops on Etsy and eBay while our new website takes shape.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://autoworks3d.com/">
+  <link rel="canonical" href="https://autoworks3d.com/">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700;900&display=swap" rel="stylesheet">
-  <style>
-    * {margin:0; padding:0; box-sizing:border-box;}
-    body {font-family:'Inter',sans-serif; background:#0a0a0f; color:#fff; min-height:100vh; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; padding:20px; overflow:hidden; position:relative;}
-    
-    .bg-glow {position:absolute; width:600px; height:600px; background:radial-gradient(circle, rgba(0,212,255,0.15) 0%, rgba(0,212,255,0.05) 30%, transparent 70%); top:50%; left:50%; transform:translate(-50%,-50%); pointer-events:none; animation:glow-float 12s ease-in-out infinite; filter:blur(80px);}
-    .bg-glow-2 {position:absolute; width:500px; height:500px; background:radial-gradient(circle, rgba(0,153,204,0.12) 0%, rgba(0,100,150,0.04) 30%, transparent 70%); top:50%; left:50%; pointer-events:none; animation:glow-float-reverse 15s ease-in-out infinite; filter:blur(70px);}
-    
-    .content {position:relative; z-index:1;}
-    
-    h1 {font-size:clamp(3rem,12vw,6rem); margin:0 0 15px 0; letter-spacing:4px; font-weight:900; background:linear-gradient(90deg,#00d4ff,#0099cc); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;}
-    
-    .tagline {font-size:clamp(1rem,4vw,1.4rem); font-weight:300; margin:0 0 10px 0; letter-spacing:6px; text-transform:uppercase; opacity:0.75; animation:text-pulse 4s ease-in-out infinite;}
-    
-    .divider {width:60px; height:2px; background:linear-gradient(90deg,transparent,#00d4ff,transparent); margin:40px auto; border-radius:2px; opacity:0.7;}
-    
-    .buttons {display:flex; flex-wrap:wrap; justify-content:center; gap:16px; animation:fade-up 1s ease-out 0.3s both;}
-    
-    .btn {display:inline-flex; align-items:center; gap:10px; background:rgba(0,212,255,0.1); color:#00d4ff; padding:16px 36px; border-radius:50px; text-decoration:none; font-weight:600; font-size:clamp(0.9rem,3vw,1.1rem); border:1px solid rgba(0,212,255,0.3); backdrop-filter:blur(10px); transition:all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);}
-    .btn:hover {background:rgba(0,212,255,0.2); border-color:#00d4ff; transform:translateY(-3px); box-shadow:0 20px 40px rgba(0,212,255,0.3);}
-    
-    .btn-ebay {background:rgba(255,255,255,0.05); color:#fff; border-color:rgba(255,255,255,0.2);}
-    .btn-ebay:hover {background:rgba(255,255,255,0.1); border-color:rgba(255,255,255,0.4); box-shadow:0 20px 40px rgba(255,255,255,0.15);}
-    
-    @keyframes glow-float {
-      0%, 100% {transform:translate(-50%,-50%) scale(1); opacity:0.4;}
-      50% {transform:translate(-48%,-52%) scale(1.05); opacity:0.6;}
-    }
-    @keyframes glow-float-reverse {
-      0%, 100% {transform:translate(-50%,-50%) scale(1); opacity:0.3;}
-      50% {transform:translate(-52%,-48%) scale(1.04); opacity:0.5;}
-    }
-    @keyframes text-pulse {
-      0%, 100% {opacity:0.75;}
-      50% {opacity:0.9;}
-    }
-    @keyframes fade-up {from {opacity:0; transform:translateY(20px);} to {opacity:1; transform:translateY(0);}}
-    
-    @media (max-width:600px) {.btn {padding:14px 28px;} .buttons {flex-direction:column; align-items:center;}}
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/background.js" defer></script>
+  <title>AutoWorks3D — 3D-Printed Automotive Solutions</title>
 </head>
 <body>
-
-  <div class="bg-glow"></div>
-  <div class="bg-glow-2"></div>
-  
-  <div class="content">
-    <h1>AutoWorks3D</h1>
-    <div class="tagline">Website Coming Soon</div>
-    <div class="divider"></div>
-    
-    <div class="buttons">
-      <a href="https://AutoWorks3D.etsy.com" class="btn">Shop on Etsy</a>
-      <a href="https://www.ebay.com/usr/autoworks3d" class="btn btn-ebay">Shop on eBay</a>
-    </div>
+  <div class="atmosphere" aria-hidden="true">
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+    <canvas id="contours"></canvas>
+    <div class="vignette"></div>
+    <div class="grain"></div>
   </div>
-
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="AutoWorks3D home">
+      <svg class="brand-mark" viewBox="0 0 40 40" fill="none" aria-hidden="true"><path d="M20 3 36 12v16L20 37 4 28V12L20 3Z"/><path d="m4 12 16 9 16-9M20 21v16M12 17v-1l8-5 8 5v1M12 23l8 5 8-5"/></svg>
+      <span>AUTOWORKS<span class="brand-accent">3D</span></span>
+    </a>
+    <span class="header-note">DESIGNED WITH PURPOSE.</span>
+  </header>
+  <main id="main-content">
+    <div class="hero">
+      <p class="eyebrow"><span></span> AUTOMOTIVE SOLUTIONS, REIMAGINED</p>
+      <h1>AutoWorks<span>3D</span></h1>
+      <p class="hero-line">Purpose-built. <span>Layer by layer.</span></p>
+      <p class="description">Custom tools. Hard-to-find parts. Practical fixes.<br>3D-printed for the real world.</p>
+      <nav class="shop-links" aria-label="Shop AutoWorks3D">
+        <a href="https://AutoWorks3D.etsy.com" class="button button-primary">Shop on Etsy <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+        <a href="https://www.ebay.com/usr/autoworks3d" class="button button-secondary">Shop on eBay <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+      </nav>
+      <p class="coming-soon"><span class="status-dot"></span> Our new website is taking shape.<span class="shop-note">Shop with us today.</span></p>
+    </div>
+  </main>
+  <footer class="site-footer">
+    <span class="footer-wordmark">PRECISION IN EVERY LAYER.</span>
+    <div class="footer-right"><span>© AutoWorks3D</span><button class="motion-toggle" type="button" aria-pressed="false" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 4v8M11 4v8"/></svg><span>Pause motion</span></button></div>
+  </footer>
 </body>
 </html>

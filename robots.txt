@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://autoworks3d.com/sitemap.xml
