@@ -4,7 +4,6 @@
   const canvas = document.querySelector('#contours');
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-  const toggle = document.querySelector('.motion-toggle');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
   let width = 0, height = 0, frame = 0, lastTime = 0, phase = 0;
@@ -69,15 +68,10 @@
   }
   function syncMotion() {
     document.body.classList.toggle('motion-paused', paused);
-    toggle.setAttribute('aria-pressed', String(paused));
-    toggle.querySelector('span').textContent = paused ? 'Resume motion' : 'Pause motion';
-    toggle.querySelector('path').setAttribute('d', paused ? 'M5 3l7 5-7 5V3Z' : 'M5 4v8M11 4v8');
     cancelAnimationFrame(frame);
     frame = 0;
     if (!paused && !document.hidden) { lastTime = performance.now(); frame = requestAnimationFrame(animate); }
   }
-  toggle.hidden = false;
-  toggle.addEventListener('click', () => { paused = !paused; syncMotion(); });
   reducedMotion.addEventListener('change', () => { paused = reducedMotion.matches; syncMotion(); });
   document.addEventListener('visibilitychange', syncMotion);
   window.addEventListener('resize', resize, { passive: true });

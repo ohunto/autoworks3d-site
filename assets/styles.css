@@ -107,9 +107,9 @@ a:focus-visible,button:focus-visible {
 .site-footer {
   display:flex;
   align-items:center;
-  justify-content:space-between;
-  gap:24px;
-  margin:0 4.5vw;
+  justify-content:center;
+  width:68.25vw;
+  margin:0 auto;
 }
 
 main {
@@ -146,18 +146,21 @@ main {
   box-shadow:0 0 10px #60e4f566;
 }
 
-h1 {
+h1,.footer-wordmark {
   font-family:Manrope,Inter,Arial,sans-serif;
-  font-size:clamp(46px,10.5vw,148px);
   line-height:1.08;
   letter-spacing:-.065em;
   font-weight:800;
-  margin:0 0 26px;
   color:#e5f9ff;
   text-shadow:0 2px 36px #4cc5f00a;
 }
 
-h1 span {
+h1 {
+  font-size:clamp(46px,10.5vw,148px);
+  margin:0 0 26px;
+}
+
+h1 span,.footer-wordmark span {
   background:linear-gradient(135deg,#b8f6ff 5%,#48d6ef 48%,#1596be 100%);
   background-clip:text;
   -webkit-background-clip:text;
@@ -230,8 +233,9 @@ h1 span {
   .button:hover svg {
     transform:translateX(3px);
   }
-  .motion-toggle:hover {
-    color:var(--text);
+  .footer-brand:hover {
+    filter:grayscale(0);
+    opacity:1;
   }
 }
 
@@ -260,43 +264,35 @@ h1 span {
 }
 
 .site-footer {
-  min-height:85px;
+  min-height:64px;
   border-top:1px solid #91d7e112;
   font-size:10px;
   color:#8496a3;
   flex-shrink:0;
 }
 
-.footer-right {
-  margin-left:auto;
-  display:flex;
-  align-items:center;
-  gap:28px;
-}
-
-.motion-toggle {
-  appearance:none;
-  border:0;
-  background:transparent;
-  color:#9aadb9;
-  font:inherit;
-  cursor:pointer;
-  display:flex;
+.footer-brand {
+  display:inline-flex;
   align-items:center;
   gap:6px;
-  padding:12px 0;
   min-height:44px;
+  text-decoration:none;
+  filter:grayscale(1);
+  opacity:.65;
+  transition:filter .35s ease,opacity .35s ease;
 }
 
-.motion-toggle[hidden] {
-  display:none;
+.footer-brand:focus-visible {
+  filter:grayscale(0);
+  opacity:1;
 }
 
-.motion-toggle svg {
-  width:12px;
-  height:12px;
-  stroke:currentColor;
-  stroke-width:1.5;
+.footer-wordmark {
+  font-size:16px;
+}
+
+.copyright {
+  font-size:10px;
 }
 
 body.motion-paused .ambient {
@@ -370,14 +366,8 @@ body.motion-paused .ambient {
     margin-top:-5px;
   }
   .site-footer {
-    margin-inline:24px;
-    min-height:95px;
-    gap:14px;
-  }
-  .footer-right {
-    gap:4px;
-    align-items:flex-end;
-    flex-direction:column;
+    width:calc((100% - 48px) * .75);
+    min-height:72px;
   }
   .ambient {
     filter:blur(45px);
