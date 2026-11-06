@@ -18,7 +18,7 @@ No framework, package installation, build system, analytics, or backend is requi
 
 From this repository, run `python3 -m http.server 8000 --bind 127.0.0.1`, then visit `http://127.0.0.1:8000`. Check the page at both desktop and mobile widths and verify both shop links before publishing. `node --check assets/background.js` checks JavaScript syntax.
 
-Motion respects the operating system's reduced-motion preference and stops while the tab is hidden. Shop links remain usable without JavaScript. The background caps pixel density and runs at up to 60 frames per second for fine pointers, or 30 on touch devices. A passing light gently displaces only the trail it crosses; pointer movement bends the trails without emitting particles. Sparse stars occasionally shimmer.
+Motion respects the operating system's reduced-motion preference and stops while the tab is hidden. Shop links remain usable without JavaScript. The background caps pixel density and runs at up to 60 frames per second for fine pointers, or 30 on touch devices. A passing light opens a soft, translucent wake in only the trail it crosses; pointer movement bends the trails without emitting particles. Sparse stars occasionally shimmer.
 
 ## Publishing
 

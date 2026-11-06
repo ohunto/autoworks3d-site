@@ -87,9 +87,9 @@
   function makeStars() {
     const count = Math.min(150, Math.max(35, Math.round(width * height / 10500)));
     while (stars.length < count) stars.push({
-      x:Math.random(), y:Math.random(), radius:random(.45, 1),
-      opacity:random(.12, .34), phase:random(0, 40), period:random(19, 41),
-      shimmer:Math.random() < .55
+      x:Math.random(), y:Math.random(), radius:random(.55, 1.15),
+      opacity:random(.16, .38), phase:random(0, 18), period:random(9, 18),
+      shimmer:Math.random() < .8
     });
     stars.length = count;
   }
@@ -97,26 +97,26 @@
   function drawStars() {
     for (const star of stars) {
       const phase = (elapsed + star.phase) % star.period;
-      const shimmer = !reducedMotion.matches && star.shimmer && phase < 3.4
-        ? Math.pow(Math.sin(Math.PI * phase / 3.4), 2) : 0;
+      const shimmer = !reducedMotion.matches && star.shimmer && phase < 4
+        ? Math.pow(Math.sin(Math.PI * phase / 4), 2) : 0;
       const x = star.x * width, y = star.y * height;
-      ctx.fillStyle = `rgba(180, 205, 226, ${star.opacity + shimmer * .19})`;
+      ctx.fillStyle = `rgba(180, 205, 226, ${Math.min(.9, star.opacity + shimmer * .58)})`;
       ctx.beginPath();
-      ctx.arc(x, y, star.radius, 0, Math.PI * 2);
+      ctx.arc(x, y, star.radius + shimmer * .3, 0, Math.PI * 2);
       ctx.fill();
       if (shimmer > .05) {
-        const halo = ctx.createRadialGradient(x, y, 0, x, y, 3.5);
-        halo.addColorStop(0, `rgba(151, 203, 232, ${shimmer * .065})`);
+        const halo = ctx.createRadialGradient(x, y, 0, x, y, 6);
+        halo.addColorStop(0, `rgba(151, 203, 232, ${shimmer * .22})`);
         halo.addColorStop(1, 'rgba(151, 203, 232, 0)');
         ctx.fillStyle = halo;
-        ctx.fillRect(x - 3.5, y - 3.5, 7, 7);
+        ctx.fillRect(x - 6, y - 6, 12, 12);
       }
     }
   }
 
   function updateCrossings() {
     for (let i = crossings.length - 1; i >= 0; i--) {
-      if (elapsed - crossings[i].time > 3.2) crossings.splice(i, 1);
+      if (elapsed - crossings[i].time > 4.2) crossings.splice(i, 1);
     }
     for (const moving of paths) {
       const live = moving.live;
@@ -140,19 +140,82 @@
     }
   }
 
+  function wakeShape(crossing, distance) {
+    const age = elapsed - crossing.time;
+    const spread = 17 + age * 12;
+    const envelope = Math.exp(-distance * distance / (2 * spread * spread));
+    const life = (1 - Math.exp(-age * 8)) * Math.exp(-age * .85);
+    return {age, spread, envelope, life};
+  }
+
   function crossingBend(path, along) {
     let offset = 0;
     for (const crossing of crossings) {
-      // Only the existing trail yields; the passing light keeps its course.
       if (path !== crossing.target) continue;
-      const age = elapsed - crossing.time;
       const distance = along - (path.vertical ? crossing.y : crossing.x);
-      const spread = 22 + age * 17;
-      const envelope = Math.exp(-distance * distance / (2 * spread * spread));
-      const settle = (1 - Math.exp(-age * 12)) * Math.exp(-age * 2.2);
-      offset += envelope * settle * 3 * crossing.strength * crossing.direction;
+      const {envelope, life} = wakeShape(crossing, distance);
+      offset += envelope * life * 25 * crossing.strength * crossing.direction;
     }
     return offset;
+  }
+
+  function trailDensity(path, along) {
+    let density = 1;
+    for (const crossing of crossings) {
+      if (path !== crossing.target) continue;
+      const distance = along - (path.vertical ? crossing.y : crossing.x);
+      const {envelope, life} = wakeShape(crossing, distance);
+      density *= 1 - envelope * life * .95;
+    }
+    return density;
+  }
+
+  function drawSmokeWakes() {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const crossing of crossings) {
+      const path = crossing.target;
+      const {age, spread, life} = wakeShape(crossing, 0);
+      if (life < .015 || !path.live) continue;
+      const center = path.vertical ? crossing.y : crossing.x;
+      const cross = path.vertical ? crossing.x : crossing.y;
+      // These translucent folds remain connected to the struck trail.
+      // Nothing is emitted as a free-flying particle or a radial shockwave.
+      for (let layer = -2; layer <= 2; layer++) {
+        const points = [];
+        const extent = spread * 2.8;
+        for (let step = 0; step <= 48; step++) {
+          const d = (step / 48 * 2 - 1) * extent;
+          const along = center + d;
+          if (along < path.live.from || along > path.live.to) continue;
+          const envelope = Math.exp(-d * d / (2 * spread * spread));
+          const fold = Math.sin(d / spread * 2.4 + layer * .55) * (5 + age * 3);
+          const drift = (25 + fold + layer * (3 + age * 2)) * envelope * life * crossing.strength * crossing.direction;
+          const x = path.vertical ? cross + drift : along;
+          const y = path.vertical ? along : cross + drift;
+          const bend = displacement(x, y);
+          points.push([x + bend[0], y + bend[1]]);
+        }
+        if (points.length < 2) continue;
+        const gradient = path.vertical
+          ? ctx.createLinearGradient(cross, center - extent, cross, center + extent)
+          : ctx.createLinearGradient(center - extent, cross, center + extent, cross);
+        const alpha = life * crossing.strength * .23;
+        gradient.addColorStop(0, 'rgba(105, 191, 223, 0)');
+        gradient.addColorStop(.35, `rgba(105, 191, 223, ${alpha})`);
+        gradient.addColorStop(.5, `rgba(153, 217, 239, ${alpha * 1.25})`);
+        gradient.addColorStop(.65, `rgba(105, 191, 223, ${alpha})`);
+        gradient.addColorStop(1, 'rgba(105, 191, 223, 0)');
+        ctx.strokeStyle = gradient;
+        ctx.globalAlpha = .32;
+        ctx.lineWidth = 5 + age * 2;
+        strokeCurve(points);
+        ctx.globalAlpha = .7;
+        ctx.lineWidth = 1.4 + age * .7;
+        strokeCurve(points);
+      }
+    }
+    ctx.restore();
   }
 
   function updateInteraction(dt) {
@@ -252,8 +315,8 @@
       const base = path.vertical ? ctx.createLinearGradient(cross, from, cross, to) : ctx.createLinearGradient(from, cross, to, cross);
       // Each part of the line remembers when the light passed it: it lingers,
       // then fades gently, rather than leaving a permanent grid behind.
-      for (let step = 0; step <= 20; step++) {
-        const fraction = step / 20;
+      for (let step = 0; step <= 100; step++) {
+        const fraction = step / 100;
         const position = (from + (to - from) * fraction) / length;
         const distance = path.reverse ? 1 - position : position;
         const passedAt = path.first
@@ -262,7 +325,7 @@
         const fadeProgress = clamp((age - passedAt - 1.2) / (path.fade - 1.2));
         const fade = 1 - fadeProgress * fadeProgress * (3 - 2 * fadeProgress);
         const edge = Math.min(1, position / .14, (1 - position) / .14);
-        base.addColorStop(fraction, `rgba(117, 167, 189, ${fade * (.04 + .19 * edge)})`);
+        base.addColorStop(fraction, `rgba(117, 167, 189, ${fade * (.04 + .19 * edge) * trailDensity(path, position * length)})`);
       }
       segment(path, from, to, base, .65);
 
@@ -287,6 +350,7 @@
       segment(path, tail, head, gradient, 1.2);
       ctx.restore();
     }
+    if (!still) drawSmokeWakes();
   }
 
   function resize() {
