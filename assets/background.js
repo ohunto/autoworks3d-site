@@ -17,8 +17,8 @@
     const columns = mobile ? [.08, .29, .71, .92] : [.065, .19, .345, .5, .655, .81, .935];
     const rows = mobile ? [.12, .25, .49, .73, .88] : [.115, .255, .435, .615, .795, .91];
     paths = [
-      ...columns.map((position, i) => ({vertical:true, position, delay:.12 + i * .07, duration:9 + i * 1.1, offset:i * .173, reverse:i % 2 === 0})),
-      ...rows.map((position, i) => ({vertical:false, position, delay:i * .1, duration:11 + i * 1.3, offset:.24 + i * .217, reverse:i % 2 !== 0}))
+      ...columns.map((position, i) => ({vertical:true, position, delay:.2 + i * .2, duration:9 + i * 1.1, offset:i * .173, reverse:i % 2 === 0})),
+      ...rows.map((position, i) => ({vertical:false, position, delay:i * .24, duration:11 + i * 1.3, offset:.24 + i * .217, reverse:i % 2 !== 0}))
     ];
   }
 
@@ -39,13 +39,18 @@
     for (const path of paths) {
       const length = path.vertical ? height : width;
       const tailLength = Math.min(170, length * .22);
-      const introDuration = (path.vertical ? 2.2 : 2.6) + path.position * .6;
-      const introProgress = Math.max(0, (elapsed - path.delay) / introDuration);
+      const steadySpeed = 1.55 / path.duration;
+      // Start only 30% faster, decelerating continuously to the ambient speed.
+      // Integrating that speed keeps the light and the line tip exactly together.
+      const introDuration = 1 / (steadySpeed * 1.15);
+      const age = Math.max(0, elapsed - path.delay);
+      const drawingTime = Math.min(age, introDuration);
+      const introProgress = steadySpeed * (1.3 * drawingTime - .15 * drawingTime * drawingTime / introDuration + Math.max(0, age - introDuration));
       const reveal = still ? 1 : clamp(introProgress);
       if (!reveal) continue;
       // The first light pass is the pen: nothing is drawn ahead of its leading tip.
-      const from = path.reverse ? length * (1 - reveal) : 0;
-      const to = path.reverse ? length : length * reveal;
+      const from = 0;
+      const to = length * reveal;
       const cross = path.position * (path.vertical ? width : height);
       const base = path.vertical ? ctx.createLinearGradient(0, 0, 0, height) : ctx.createLinearGradient(0, 0, width, 0);
       base.addColorStop(0, 'rgba(117, 167, 189, 0.035)');
@@ -57,15 +62,17 @@
       if (still) continue;
 
       // Let the drawing light's entire tail leave before starting the ambient passes.
-      const introEnd = path.delay + introDuration * (1 + tailLength / length);
+      const introEnd = path.delay + introDuration + tailLength / length / steadySpeed;
       const repeatStart = introEnd + .9 + path.offset * 2;
       let travel;
       if (elapsed <= introEnd) travel = introProgress;
       else if (elapsed < repeatStart) continue;
       else travel = ((elapsed - repeatStart) / path.duration % 1) * 1.55 - .25;
-      const head = (path.reverse ? 1 - travel : travel) * length;
-      const tail = head + (path.reverse ? tailLength : -tailLength);
-      const strength = elapsed <= introEnd ? .95 : .8;
+      // The entrance flows from top and left; later passes keep their original directions.
+      const reverse = elapsed > introEnd && path.reverse;
+      const head = (reverse ? 1 - travel : travel) * length;
+      const tail = head + (reverse ? tailLength : -tailLength);
+      const strength = .8 + .15 * (1 - clamp(age / introDuration));
       if (Math.max(head, tail) < 0 || Math.min(head, tail) > length) continue;
       const gradient = path.vertical ? ctx.createLinearGradient(cross, tail, cross, head) : ctx.createLinearGradient(tail, cross, head, cross);
       gradient.addColorStop(0, 'rgba(53, 174, 225, 0)');
