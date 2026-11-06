@@ -16,9 +16,12 @@
     const mobile = width < 600;
     const columns = mobile ? [.08, .29, .71, .92] : [.065, .19, .345, .5, .655, .81, .935];
     const rows = mobile ? [.12, .25, .49, .73, .88] : [.115, .255, .435, .615, .795, .91];
+    // First arrivals are spread through time and space, like the ongoing pulses.
+    const columnArrivals = [1.8, .9, 7.2, 4.5, 10.8, 5.4, 8.1];
+    const rowArrivals = [0, 2.7, 3.6, 9, 6.3, 9.9];
     paths = [
-      ...columns.map((position, i) => ({vertical:true, position, delay:.2 + i * .2, duration:9 + i * 1.1, offset:i * .173, reverse:i % 2 === 0})),
-      ...rows.map((position, i) => ({vertical:false, position, delay:i * .24, duration:11 + i * 1.3, offset:.24 + i * .217, reverse:i % 2 !== 0}))
+      ...columns.map((position, i) => ({vertical:true, position, delay:columnArrivals[i], duration:9 + i * 1.1, offset:i * .173, reverse:i % 2 === 0})),
+      ...rows.map((position, i) => ({vertical:false, position, delay:rowArrivals[i], duration:11 + i * 1.3, offset:.24 + i * .217, reverse:i % 2 !== 0}))
     ];
   }
 
@@ -49,8 +52,8 @@
       const reveal = still ? 1 : clamp(introProgress);
       if (!reveal) continue;
       // The first light pass is the pen: nothing is drawn ahead of its leading tip.
-      const from = 0;
-      const to = length * reveal;
+      const from = path.reverse ? length * (1 - reveal) : 0;
+      const to = path.reverse ? length : length * reveal;
       const cross = path.position * (path.vertical ? width : height);
       const base = path.vertical ? ctx.createLinearGradient(0, 0, 0, height) : ctx.createLinearGradient(0, 0, width, 0);
       base.addColorStop(0, 'rgba(117, 167, 189, 0.035)');
@@ -68,8 +71,7 @@
       if (elapsed <= introEnd) travel = introProgress;
       else if (elapsed < repeatStart) continue;
       else travel = ((elapsed - repeatStart) / path.duration % 1) * 1.55 - .25;
-      // The entrance flows from top and left; later passes keep their original directions.
-      const reverse = elapsed > introEnd && path.reverse;
+      const reverse = path.reverse;
       const head = (reverse ? 1 - travel : travel) * length;
       const tail = head + (reverse ? tailLength : -tailLength);
       const strength = .8 + .15 * (1 - clamp(age / introDuration));
