@@ -18,7 +18,7 @@
     const rows = mobile ? [.12, .25, .49, .73, .88] : [.115, .255, .435, .615, .795, .91];
     // First arrivals are spread through time and space, like the ongoing pulses.
     const columnArrivals = [1.8, .9, 7.2, 4.5, 10.8, 5.4, 8.1];
-    const rowArrivals = [0, 2.7, 3.6, 9, 6.3, 9.9];
+    const rowArrivals = [0, 2.7, 3.6, 1.35, 6.3, 9.9];
     paths = [
       ...columns.map((position, i) => ({vertical:true, position, delay:columnArrivals[i], duration:9 + i * 1.1, offset:i * .173, reverse:i % 2 === 0})),
       ...rows.map((position, i) => ({vertical:false, position, delay:rowArrivals[i], duration:11 + i * 1.3, offset:.24 + i * .217, reverse:i % 2 !== 0}))
