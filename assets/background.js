@@ -9,20 +9,31 @@
   const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
   let width = 0, height = 0, frame = 0, lastTime = 0, elapsed = 0;
   let pointerX = 0, pointerY = 0, driftX = 0, driftY = 0;
-  let paths = [];
+  let paths = [], mobileLayout;
   const clamp = value => Math.max(0, Math.min(1, value));
+  const random = (min, max) => min + Math.random() * (max - min);
 
   function makePaths() {
     const mobile = width < 600;
     const columns = mobile ? [.08, .29, .71, .92] : [.065, .19, .345, .5, .655, .81, .935];
     const rows = mobile ? [.12, .25, .49, .73, .88] : [.115, .255, .435, .615, .795, .91];
-    // First arrivals are spread through time and space, like the ongoing pulses.
+    if (paths.length && mobileLayout === mobile) return;
+    mobileLayout = mobile;
+    // Keep an early light in each region; vary the timing on every visit.
     const columnArrivals = [1.8, .9, 7.2, 4.5, 10.8, 5.4, 8.1];
     const rowArrivals = [0, 2.7, 3.6, 1.35, 6.3, 9.9];
     paths = [
-      ...columns.map((position, i) => ({vertical:true, position, delay:columnArrivals[i], duration:9 + i * 1.1, offset:i * .173, reverse:i % 2 === 0})),
-      ...rows.map((position, i) => ({vertical:false, position, delay:rowArrivals[i], duration:11 + i * 1.3, offset:.24 + i * .217, reverse:i % 2 !== 0}))
-    ];
+      ...columns.map((position, i) => ({vertical:true, position, delay:columnArrivals[i], duration:9 + i * 1.1, reverse:i % 2 === 0})),
+      ...rows.map((position, i) => ({vertical:false, position, delay:rowArrivals[i], duration:11 + i * 1.3, reverse:i % 2 !== 0}))
+    ].map((path, i) => ({
+      ...path,
+      start:elapsed + (path.delay === 0 ? 0 : Math.max(.5, path.delay + random(-.65, .65))),
+      duration:path.duration * random(.92, 1.08),
+      fade:random(7, 9),
+      rest:random(1, 5),
+      first:true,
+      index:i
+    }));
   }
 
   function segment(path, from, to, stroke, thickness) {
@@ -42,39 +53,55 @@
     for (const path of paths) {
       const length = path.vertical ? height : width;
       const tailLength = Math.min(170, length * .22);
+      if (still) {
+        // A sparse, quiet composition when the visitor prefers no motion.
+        if (path.index % 3 === 0) segment(path, length * .15, length * .85, 'rgba(117, 167, 189, .07)', .65);
+        continue;
+      }
       const steadySpeed = 1.55 / path.duration;
-      // Start only 30% faster, decelerating continuously to the ambient speed.
-      // Integrating that speed keeps the light and the line tip exactly together.
       const introDuration = 1 / (steadySpeed * 1.15);
-      const age = Math.max(0, elapsed - path.delay);
+      const crossingDuration = path.first ? introDuration : 1 / steadySpeed;
+      const age = elapsed - path.start;
+      if (age < 0) continue;
+      // A trail disappears completely before this path receives another light.
+      if (age > crossingDuration + path.fade + path.rest) {
+        path.start = elapsed;
+        path.duration = random(10, 18);
+        path.reverse = Math.random() < .5;
+        path.fade = random(7, 9);
+        path.rest = random(1, 5);
+        path.first = false;
+        continue;
+      }
       const drawingTime = Math.min(age, introDuration);
-      const introProgress = steadySpeed * (1.3 * drawingTime - .15 * drawingTime * drawingTime / introDuration + Math.max(0, age - introDuration));
-      const reveal = still ? 1 : clamp(introProgress);
+      const travel = path.first
+        ? steadySpeed * (1.3 * drawingTime - .15 * drawingTime * drawingTime / introDuration + Math.max(0, age - introDuration))
+        : age * steadySpeed;
+      const reveal = clamp(travel);
       if (!reveal) continue;
-      // The first light pass is the pen: nothing is drawn ahead of its leading tip.
       const from = path.reverse ? length * (1 - reveal) : 0;
       const to = path.reverse ? length : length * reveal;
       const cross = path.position * (path.vertical ? width : height);
-      const base = path.vertical ? ctx.createLinearGradient(0, 0, 0, height) : ctx.createLinearGradient(0, 0, width, 0);
-      base.addColorStop(0, 'rgba(117, 167, 189, 0.035)');
-      base.addColorStop(.18, 'rgba(117, 167, 189, 0.23)');
-      base.addColorStop(.5, 'rgba(117, 167, 189, 0.14)');
-      base.addColorStop(.82, 'rgba(117, 167, 189, 0.23)');
-      base.addColorStop(1, 'rgba(117, 167, 189, 0.035)');
+      const base = path.vertical ? ctx.createLinearGradient(cross, from, cross, to) : ctx.createLinearGradient(from, cross, to, cross);
+      // Each part of the line remembers when the light passed it: it lingers,
+      // then fades gently, rather than leaving a permanent grid behind.
+      for (let step = 0; step <= 20; step++) {
+        const fraction = step / 20;
+        const position = (from + (to - from) * fraction) / length;
+        const distance = path.reverse ? 1 - position : position;
+        const passedAt = path.first
+          ? introDuration * (1.3 - Math.sqrt(Math.max(0, 1.69 - .6 * distance / (steadySpeed * introDuration)))) / .3
+          : distance / steadySpeed;
+        const fadeProgress = clamp((age - passedAt - 1.2) / (path.fade - 1.2));
+        const fade = 1 - fadeProgress * fadeProgress * (3 - 2 * fadeProgress);
+        const edge = Math.min(1, position / .14, (1 - position) / .14);
+        base.addColorStop(fraction, `rgba(117, 167, 189, ${fade * (.04 + .19 * edge)})`);
+      }
       segment(path, from, to, base, .65);
-      if (still) continue;
 
-      // Let the drawing light's entire tail leave before starting the ambient passes.
-      const introEnd = path.delay + introDuration + tailLength / length / steadySpeed;
-      const repeatStart = introEnd + .9 + path.offset * 2;
-      let travel;
-      if (elapsed <= introEnd) travel = introProgress;
-      else if (elapsed < repeatStart) continue;
-      else travel = ((elapsed - repeatStart) / path.duration % 1) * 1.55 - .25;
-      const reverse = path.reverse;
-      const head = (reverse ? 1 - travel : travel) * length;
-      const tail = head + (reverse ? tailLength : -tailLength);
-      const strength = .8 + .15 * (1 - clamp(age / introDuration));
+      const head = (path.reverse ? 1 - travel : travel) * length;
+      const tail = head + (path.reverse ? tailLength : -tailLength);
+      const strength = path.first ? .8 + .15 * (1 - clamp(age / introDuration)) : .8;
       if (Math.max(head, tail) < 0 || Math.min(head, tail) > length) continue;
       const gradient = path.vertical ? ctx.createLinearGradient(cross, tail, cross, head) : ctx.createLinearGradient(tail, cross, head, cross);
       gradient.addColorStop(0, 'rgba(53, 174, 225, 0)');
