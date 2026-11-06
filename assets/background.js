@@ -10,7 +10,7 @@
   let width = 0, height = 0, frame = 0, lastTime = 0, elapsed = 0;
   let pointerX = 0, pointerY = 0, driftX = 0, driftY = 0;
   let paths = [];
-  const ease = value => 1 - Math.pow(1 - Math.max(0, Math.min(1, value)), 3);
+  const clamp = value => Math.max(0, Math.min(1, value));
 
   function makePaths() {
     const mobile = width < 600;
@@ -38,12 +38,14 @@
     const still = reducedMotion.matches;
     for (const path of paths) {
       const length = path.vertical ? height : width;
-      const reveal = still ? 1 : ease((elapsed - path.delay) / 1.9);
+      const tailLength = Math.min(170, length * .22);
+      const introDuration = (path.vertical ? 2.2 : 2.6) + path.position * .6;
+      const introProgress = Math.max(0, (elapsed - path.delay) / introDuration);
+      const reveal = still ? 1 : clamp(introProgress);
       if (!reveal) continue;
-      // Lines expand from different origins, forming the layout before the type arrives.
-      const origin = length * (path.reverse ? .72 : .28);
-      const from = origin * (1 - reveal);
-      const to = origin + (length - origin) * reveal;
+      // The first light pass is the pen: nothing is drawn ahead of its leading tip.
+      const from = path.reverse ? length * (1 - reveal) : 0;
+      const to = path.reverse ? length : length * reveal;
       const cross = path.position * (path.vertical ? width : height);
       const base = path.vertical ? ctx.createLinearGradient(0, 0, 0, height) : ctx.createLinearGradient(0, 0, width, 0);
       base.addColorStop(0, 'rgba(117, 167, 189, 0.035)');
@@ -52,21 +54,24 @@
       base.addColorStop(.82, 'rgba(117, 167, 189, 0.23)');
       base.addColorStop(1, 'rgba(117, 167, 189, 0.035)');
       segment(path, from, to, base, .65);
-      if (still || elapsed < 1.25) continue;
+      if (still) continue;
 
-      const progress = ((elapsed - 1.25) / path.duration + path.offset) % 1;
-      // Each pass includes breathing room; highlights never loop abruptly at an edge.
-      const travel = progress * 1.55 - .25;
+      // Let the drawing light's entire tail leave before starting the ambient passes.
+      const introEnd = path.delay + introDuration * (1 + tailLength / length);
+      const repeatStart = introEnd + .9 + path.offset * 2;
+      let travel;
+      if (elapsed <= introEnd) travel = introProgress;
+      else if (elapsed < repeatStart) continue;
+      else travel = ((elapsed - repeatStart) / path.duration % 1) * 1.55 - .25;
       const head = (path.reverse ? 1 - travel : travel) * length;
-      const tailLength = Math.min(170, length * .22);
       const tail = head + (path.reverse ? tailLength : -tailLength);
-      const strength = Math.min(1, (elapsed - 1.25) / 1.4) * .8;
+      const strength = elapsed <= introEnd ? .95 : .8;
       if (Math.max(head, tail) < 0 || Math.min(head, tail) > length) continue;
       const gradient = path.vertical ? ctx.createLinearGradient(cross, tail, cross, head) : ctx.createLinearGradient(tail, cross, head, cross);
       gradient.addColorStop(0, 'rgba(53, 174, 225, 0)');
       gradient.addColorStop(.65, `rgba(66, 184, 235, ${strength * .35})`);
       gradient.addColorStop(.94, `rgba(130, 225, 255, ${strength})`);
-      gradient.addColorStop(1, 'rgba(210, 246, 255, 0)');
+      gradient.addColorStop(1, `rgba(210, 246, 255, ${strength})`);
       ctx.save();
       ctx.beginPath();
       ctx.rect(0, 0, width, height);
