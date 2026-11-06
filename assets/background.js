@@ -10,7 +10,8 @@
   let width = 0, height = 0, frame = 0, lastTime = 0, elapsed = 0;
   let pointer = null;
   let field = null;
-  const wisps = [];
+  const crossings = [];
+  let stars = [];
   const cellSize = 30;
   let paths = [], mobileLayout;
   const clamp = value => Math.max(0, Math.min(1, value));
@@ -44,7 +45,7 @@
     const rows = Math.ceil(height / cellSize) + 2;
     field = { cols, rows, x:new Float32Array(cols * rows), y:new Float32Array(cols * rows), vx:new Float32Array(cols * rows), vy:new Float32Array(cols * rows) };
     pointer = null;
-    wisps.length = 0;
+    crossings.length = 0;
   }
 
   function displacement(x, y) {
@@ -83,28 +84,75 @@
     return live.age - passedAt;
   }
 
-  function scatter(x, y, dx, dy) {
-    for (const path of paths) {
-      const live = path.live;
-      if (!live || elapsed - (path.lastScatter ?? -10) < .07) continue;
-      const cross = path.position * (path.vertical ? width : height);
-      const along = path.vertical ? y : x;
-      const across = path.vertical ? x : y;
-      if (Math.abs(across - cross) > 35 || along < live.from || along > live.to) continue;
-      const distance = path.reverse ? 1 - along / live.length : along / live.length;
-      const freshness = clamp(1 - trailAge(path, distance, live) / path.fade);
-      if (freshness < .18) continue;
-      path.lastScatter = elapsed;
-      const nearLight = Math.abs(along - live.head) < 170;
-      for (let n = 0; n < (nearLight ? 7 : 4) && wisps.length < 140; n++) {
-        const offset = random(-14, 14);
-        const px = path.vertical ? cross : along + offset;
-        const py = path.vertical ? along + offset : cross;
-        const bend = displacement(px, py);
-        wisps.push({x:px + bend[0], y:py + bend[1], vx:dx * 8 + random(-16,16), vy:dy * 8 + random(-16,16),
-          age:0, life:random(1.6,2.8), curl:random(-2.6,2.6), strength:freshness * (nearLight ? .7 : .4), points:[]});
+  function makeStars() {
+    const count = Math.min(150, Math.max(35, Math.round(width * height / 10500)));
+    while (stars.length < count) stars.push({
+      x:Math.random(), y:Math.random(), radius:random(.45, 1),
+      opacity:random(.12, .34), phase:random(0, 40), period:random(19, 41),
+      shimmer:Math.random() < .55
+    });
+    stars.length = count;
+  }
+
+  function drawStars() {
+    for (const star of stars) {
+      const phase = (elapsed + star.phase) % star.period;
+      const shimmer = !reducedMotion.matches && star.shimmer && phase < 3.4
+        ? Math.pow(Math.sin(Math.PI * phase / 3.4), 2) : 0;
+      const x = star.x * width, y = star.y * height;
+      ctx.fillStyle = `rgba(180, 205, 226, ${star.opacity + shimmer * .19})`;
+      ctx.beginPath();
+      ctx.arc(x, y, star.radius, 0, Math.PI * 2);
+      ctx.fill();
+      if (shimmer > .05) {
+        const halo = ctx.createRadialGradient(x, y, 0, x, y, 3.5);
+        halo.addColorStop(0, `rgba(151, 203, 232, ${shimmer * .065})`);
+        halo.addColorStop(1, 'rgba(151, 203, 232, 0)');
+        ctx.fillStyle = halo;
+        ctx.fillRect(x - 3.5, y - 3.5, 7, 7);
       }
     }
+  }
+
+  function updateCrossings() {
+    for (let i = crossings.length - 1; i >= 0; i--) {
+      if (elapsed - crossings[i].time > 3.2) crossings.splice(i, 1);
+    }
+    for (const moving of paths) {
+      const live = moving.live;
+      if (!live || live.previousHead === null) continue;
+      for (const crossed of paths) {
+        const other = crossed.live;
+        if (moving.vertical === crossed.vertical || !other) continue;
+        const along = crossed.position * live.length;
+        if ((live.previousHead - along) * (live.head - along) > 0 || live.previousHead === live.head) continue;
+        const across = moving.position * other.length;
+        if (across < other.from || across > other.to) continue;
+        const distance = crossed.reverse ? 1 - across / other.length : across / other.length;
+        const freshness = clamp(1 - trailAge(crossed, distance, other) / crossed.fade);
+        if (freshness < .15) continue;
+        const vertical = moving.vertical ? moving : crossed;
+        const horizontal = moving.vertical ? crossed : moving;
+        if (crossings.some(c => c.vertical === vertical && c.horizontal === horizontal && elapsed - c.time < 1.2)) continue;
+        crossings.push({vertical, horizontal, target:crossed, x:vertical.position * width, y:horizontal.position * height,
+          time:elapsed, strength:.5 + freshness * .5, direction:moving.reverse ? -1 : 1});
+      }
+    }
+  }
+
+  function crossingBend(path, along) {
+    let offset = 0;
+    for (const crossing of crossings) {
+      // Only the existing trail yields; the passing light keeps its course.
+      if (path !== crossing.target) continue;
+      const age = elapsed - crossing.time;
+      const distance = along - (path.vertical ? crossing.y : crossing.x);
+      const spread = 22 + age * 17;
+      const envelope = Math.exp(-distance * distance / (2 * spread * spread));
+      const settle = (1 - Math.exp(-age * 12)) * Math.exp(-age * 2.2);
+      offset += envelope * settle * 3 * crossing.strength * crossing.direction;
+    }
+    return offset;
   }
 
   function updateInteraction(dt) {
@@ -123,18 +171,6 @@
     for (let i = 0; i < x.length; i++) {
       x[i] = Math.max(-65, Math.min(65, x[i] + vx[i] * dt));
       y[i] = Math.max(-65, Math.min(65, y[i] + vy[i] * dt));
-    }
-    for (let i = wisps.length - 1; i >= 0; i--) {
-      const w = wisps[i];
-      w.age += dt;
-      if (w.age >= w.life) { wisps.splice(i,1); continue; }
-      const angle = w.curl * dt, c = Math.cos(angle), s = Math.sin(angle);
-      const decay = Math.exp(-1.2 * dt), oldVx = w.vx;
-      w.vx = (oldVx * c - w.vy * s) * decay;
-      w.vy = (oldVx * s + w.vy * c) * decay - dt * 4;
-      w.x += w.vx * dt; w.y += w.vy * dt;
-      w.points.push([w.x,w.y]);
-      if (w.points.length > 18) w.points.shift();
     }
   }
 
@@ -157,43 +193,19 @@
       const along = from + (to - from) * i / steps;
       const x = path.vertical ? cross : along, y = path.vertical ? along : cross;
       const bend = displacement(x, y);
-      points.push([x + bend[0], y + bend[1]]);
+      const ripple = crossingBend(path, along);
+      points.push([x + bend[0] + (path.vertical ? ripple : 0), y + bend[1] + (path.vertical ? 0 : ripple)]);
     }
     ctx.strokeStyle = stroke;
     ctx.lineWidth = thickness;
     strokeCurve(points);
   }
 
-  function drawWisps() {
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.lineCap = 'round';
-    for (const w of wisps) {
-      if (w.points.length < 2) continue;
-      const alpha = w.strength * Math.pow(1 - w.age / w.life, 1.6);
-      ctx.strokeStyle = `rgba(140, 221, 249, ${alpha})`;
-      ctx.globalAlpha = .15;
-      ctx.lineWidth = 3;
-      strokeCurve(w.points);
-      ctx.globalAlpha = 1;
-      ctx.lineWidth = .7;
-      strokeCurve(w.points);
-    }
-    ctx.restore();
-  }
-
-  function draw() {
-    ctx.clearRect(0, 0, width, height);
-    const still = reducedMotion.matches;
+  function preparePaths() {
     for (const path of paths) {
+      const previousHead = path.live?.head ?? null;
       path.live = null;
       const length = path.vertical ? height : width;
-      const tailLength = Math.min(170, length * .22);
-      if (still) {
-        // A sparse, quiet composition when the visitor prefers no motion.
-        if (path.index % 3 === 0) segment(path, length * .15, length * .85, 'rgba(117, 167, 189, .07)', .65);
-        continue;
-      }
       const steadySpeed = 1.55 / path.duration;
       const introDuration = 1 / (steadySpeed * 1.15);
       const crossingDuration = path.first ? introDuration : 1 / steadySpeed;
@@ -217,6 +229,25 @@
       if (!reveal) continue;
       const from = path.reverse ? length * (1 - reveal) : 0;
       const to = path.reverse ? length : length * reveal;
+      const head = (path.reverse ? 1 - travel : travel) * length;
+      path.live = {from, to, head, length, age, steadySpeed, introDuration, travel, previousHead};
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, width, height);
+    drawStars();
+    const still = reducedMotion.matches;
+    if (!still) { preparePaths(); updateCrossings(); }
+    for (const path of paths) {
+      if (still) {
+        const length = path.vertical ? height : width;
+        if (path.index % 3 === 0) segment(path, length * .15, length * .85, 'rgba(117, 167, 189, .07)', .65);
+        continue;
+      }
+      if (!path.live) continue;
+      const {from, to, head, length, age, steadySpeed, introDuration} = path.live;
+      const tailLength = Math.min(170, length * .22);
       const cross = path.position * (path.vertical ? width : height);
       const base = path.vertical ? ctx.createLinearGradient(cross, from, cross, to) : ctx.createLinearGradient(from, cross, to, cross);
       // Each part of the line remembers when the light passed it: it lingers,
@@ -235,9 +266,7 @@
       }
       segment(path, from, to, base, .65);
 
-      const head = (path.reverse ? 1 - travel : travel) * length;
       const tail = head + (path.reverse ? tailLength : -tailLength);
-      path.live = {from, to, head, length, age, steadySpeed, introDuration};
       const strength = path.first ? .8 + .15 * (1 - clamp(age / introDuration)) : .8;
       if (Math.max(head, tail) < 0 || Math.min(head, tail) > length) continue;
       const gradient = path.vertical ? ctx.createLinearGradient(cross, tail, cross, head) : ctx.createLinearGradient(tail, cross, head, cross);
@@ -258,7 +287,6 @@
       segment(path, tail, head, gradient, 1.2);
       ctx.restore();
     }
-    if (!still) drawWisps();
   }
 
   function resize() {
@@ -269,6 +297,8 @@
     canvas.height = Math.round(height * ratio);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     makePaths();
+    makeStars();
+    for (const path of paths) path.live = null;
     resetInteraction();
     draw();
   }
@@ -309,7 +339,6 @@
         for (let i = 1; i <= steps; i++) {
           const x = pointer.x + dx * i / steps, y = pointer.y + dy * i / steps;
           stir(x,y,dx / steps,dy / steps);
-          scatter(x,y,dx / steps,dy / steps);
         }
       }
     }
