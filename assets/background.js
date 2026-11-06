@@ -8,7 +8,10 @@
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
   let width = 0, height = 0, frame = 0, lastTime = 0, elapsed = 0;
-  let pointerX = 0, pointerY = 0, driftX = 0, driftY = 0;
+  let pointer = null;
+  let field = null;
+  const wisps = [];
+  const cellSize = 30;
   let paths = [], mobileLayout;
   const clamp = value => Math.max(0, Math.min(1, value));
   const random = (min, max) => min + Math.random() * (max - min);
@@ -36,21 +39,154 @@
     }));
   }
 
-  function segment(path, from, to, stroke, thickness) {
-    const offset = path.vertical ? driftX * 12 : driftY * 9;
-    const cross = path.position * (path.vertical ? width : height) + offset;
+  function resetInteraction() {
+    const cols = Math.ceil(width / cellSize) + 2;
+    const rows = Math.ceil(height / cellSize) + 2;
+    field = { cols, rows, x:new Float32Array(cols * rows), y:new Float32Array(cols * rows), vx:new Float32Array(cols * rows), vy:new Float32Array(cols * rows) };
+    pointer = null;
+    wisps.length = 0;
+  }
+
+  function displacement(x, y) {
+    if (!field || reducedMotion.matches) return [0, 0];
+    const gx = Math.max(0, Math.min(field.cols - 2, x / cellSize));
+    const gy = Math.max(0, Math.min(field.rows - 2, y / cellSize));
+    const col = Math.floor(gx), row = Math.floor(gy);
+    const fx = gx - col, fy = gy - row, i = row * field.cols + col;
+    const a = (1 - fx) * (1 - fy), b = fx * (1 - fy), c = (1 - fx) * fy, d = fx * fy;
+    return [field.x[i] * a + field.x[i + 1] * b + field.x[i + field.cols] * c + field.x[i + field.cols + 1] * d,
+      field.y[i] * a + field.y[i + 1] * b + field.y[i + field.cols] * c + field.y[i + field.cols + 1] * d];
+  }
+
+  function stir(x, y, dx, dy) {
+    const radius = 88;
+    const speed = Math.min(32, Math.hypot(dx, dy));
+    for (let row = Math.max(1, Math.floor((y - radius) / cellSize)); row < Math.min(field.rows - 1, (y + radius) / cellSize); row++) {
+      for (let col = Math.max(1, Math.floor((x - radius) / cellSize)); col < Math.min(field.cols - 1, (x + radius) / cellSize); col++) {
+        const ox = col * cellSize - x, oy = row * cellSize - y;
+        const distance = Math.hypot(ox, oy);
+        if (distance >= radius) continue;
+        const weight = Math.pow(1 - distance / radius, 2);
+        // Drag with the hand and roll the edges of its wake into a small curl.
+        const curl = (ox * dy - oy * dx) / (radius * Math.max(1, speed));
+        const i = row * field.cols + col;
+        field.vx[i] = Math.max(-300, Math.min(300, field.vx[i] + (dx * 11 - oy * curl * .7) * weight));
+        field.vy[i] = Math.max(-300, Math.min(300, field.vy[i] + (dy * 11 + ox * curl * .7) * weight));
+      }
+    }
+  }
+
+  function trailAge(path, distance, live) {
+    const passedAt = path.first
+      ? live.introDuration * (1.3 - Math.sqrt(Math.max(0, 1.69 - .6 * distance / (live.steadySpeed * live.introDuration)))) / .3
+      : distance / live.steadySpeed;
+    return live.age - passedAt;
+  }
+
+  function scatter(x, y, dx, dy) {
+    for (const path of paths) {
+      const live = path.live;
+      if (!live || elapsed - (path.lastScatter ?? -10) < .07) continue;
+      const cross = path.position * (path.vertical ? width : height);
+      const along = path.vertical ? y : x;
+      const across = path.vertical ? x : y;
+      if (Math.abs(across - cross) > 35 || along < live.from || along > live.to) continue;
+      const distance = path.reverse ? 1 - along / live.length : along / live.length;
+      const freshness = clamp(1 - trailAge(path, distance, live) / path.fade);
+      if (freshness < .18) continue;
+      path.lastScatter = elapsed;
+      const nearLight = Math.abs(along - live.head) < 170;
+      for (let n = 0; n < (nearLight ? 7 : 4) && wisps.length < 140; n++) {
+        const offset = random(-14, 14);
+        const px = path.vertical ? cross : along + offset;
+        const py = path.vertical ? along + offset : cross;
+        const bend = displacement(px, py);
+        wisps.push({x:px + bend[0], y:py + bend[1], vx:dx * 8 + random(-16,16), vy:dy * 8 + random(-16,16),
+          age:0, life:random(1.6,2.8), curl:random(-2.6,2.6), strength:freshness * (nearLight ? .7 : .4), points:[]});
+      }
+    }
+  }
+
+  function updateInteraction(dt) {
+    if (!field) return;
+    const {cols, rows, x, y, vx, vy} = field;
+    const damping = Math.exp(-3.4 * dt);
+    // A damped displacement field spreads each disturbance locally and settles
+    // back to rest. No camera or page element ever follows the pointer.
+    for (let row = 1; row < rows - 1; row++) {
+      for (let col = 1; col < cols - 1; col++) {
+        const i = row * cols + col;
+        vx[i] = (vx[i] + ((x[i-1] + x[i+1] + x[i-cols] + x[i+cols] - 4*x[i]) * 22 - x[i] * 4) * dt) * damping;
+        vy[i] = (vy[i] + ((y[i-1] + y[i+1] + y[i-cols] + y[i+cols] - 4*y[i]) * 22 - y[i] * 4) * dt) * damping;
+      }
+    }
+    for (let i = 0; i < x.length; i++) {
+      x[i] = Math.max(-65, Math.min(65, x[i] + vx[i] * dt));
+      y[i] = Math.max(-65, Math.min(65, y[i] + vy[i] * dt));
+    }
+    for (let i = wisps.length - 1; i >= 0; i--) {
+      const w = wisps[i];
+      w.age += dt;
+      if (w.age >= w.life) { wisps.splice(i,1); continue; }
+      const angle = w.curl * dt, c = Math.cos(angle), s = Math.sin(angle);
+      const decay = Math.exp(-1.2 * dt), oldVx = w.vx;
+      w.vx = (oldVx * c - w.vy * s) * decay;
+      w.vy = (oldVx * s + w.vy * c) * decay - dt * 4;
+      w.x += w.vx * dt; w.y += w.vy * dt;
+      w.points.push([w.x,w.y]);
+      if (w.points.length > 18) w.points.shift();
+    }
+  }
+
+  function strokeCurve(points) {
     ctx.beginPath();
-    if (path.vertical) { ctx.moveTo(cross, from); ctx.lineTo(cross, to); }
-    else { ctx.moveTo(from, cross); ctx.lineTo(to, cross); }
+    ctx.moveTo(points[0][0], points[0][1]);
+    for (let i = 1; i < points.length - 1; i++) {
+      ctx.quadraticCurveTo(points[i][0],points[i][1],(points[i][0]+points[i+1][0])/2,(points[i][1]+points[i+1][1])/2);
+    }
+    const last = points[points.length - 1];
+    ctx.lineTo(last[0],last[1]);
+    ctx.stroke();
+  }
+
+  function segment(path, from, to, stroke, thickness) {
+    const cross = path.position * (path.vertical ? width : height);
+    const steps = Math.max(1, Math.ceil(Math.abs(to - from) / 9));
+    const points = [];
+    for (let i = 0; i <= steps; i++) {
+      const along = from + (to - from) * i / steps;
+      const x = path.vertical ? cross : along, y = path.vertical ? along : cross;
+      const bend = displacement(x, y);
+      points.push([x + bend[0], y + bend[1]]);
+    }
     ctx.strokeStyle = stroke;
     ctx.lineWidth = thickness;
-    ctx.stroke();
+    strokeCurve(points);
+  }
+
+  function drawWisps() {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    for (const w of wisps) {
+      if (w.points.length < 2) continue;
+      const alpha = w.strength * Math.pow(1 - w.age / w.life, 1.6);
+      ctx.strokeStyle = `rgba(140, 221, 249, ${alpha})`;
+      ctx.globalAlpha = .15;
+      ctx.lineWidth = 3;
+      strokeCurve(w.points);
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = .7;
+      strokeCurve(w.points);
+    }
+    ctx.restore();
   }
 
   function draw() {
     ctx.clearRect(0, 0, width, height);
     const still = reducedMotion.matches;
     for (const path of paths) {
+      path.live = null;
       const length = path.vertical ? height : width;
       const tailLength = Math.min(170, length * .22);
       if (still) {
@@ -101,6 +237,7 @@
 
       const head = (path.reverse ? 1 - travel : travel) * length;
       const tail = head + (path.reverse ? tailLength : -tailLength);
+      path.live = {from, to, head, length, age, steadySpeed, introDuration};
       const strength = path.first ? .8 + .15 * (1 - clamp(age / introDuration)) : .8;
       if (Math.max(head, tail) < 0 || Math.min(head, tail) > length) continue;
       const gradient = path.vertical ? ctx.createLinearGradient(cross, tail, cross, head) : ctx.createLinearGradient(tail, cross, head, cross);
@@ -121,6 +258,7 @@
       segment(path, tail, head, gradient, 1.2);
       ctx.restore();
     }
+    if (!still) drawWisps();
   }
 
   function resize() {
@@ -131,19 +269,18 @@
     canvas.height = Math.round(height * ratio);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     makePaths();
+    resetInteraction();
     draw();
   }
 
   function animate(now) {
     if (reducedMotion.matches || document.hidden) { frame = 0; return; }
     const delta = now - lastTime;
-    if (delta >= 1000 / 30) {
-      const seconds = Math.min(delta / 1000, .1);
+    if (delta >= 1000 / (finePointer.matches ? 60 : 30) - .5) {
+      const seconds = Math.min(delta / 1000, .05);
       elapsed += seconds;
       lastTime = now;
-      const follow = 1 - Math.exp(-seconds * 3);
-      driftX += (pointerX - driftX) * follow;
-      driftY += (pointerY - driftY) * follow;
+      updateInteraction(seconds);
       draw();
     }
     frame = requestAnimationFrame(animate);
@@ -153,18 +290,32 @@
     cancelAnimationFrame(frame);
     frame = 0;
     document.body.classList.toggle('motion-paused', reducedMotion.matches);
-    if (reducedMotion.matches) { driftX = driftY = 0; draw(); }
+    if (reducedMotion.matches) { resetInteraction(); draw(); }
     else if (!document.hidden) { lastTime = performance.now(); frame = requestAnimationFrame(animate); }
   }
   reducedMotion.addEventListener('change', syncMotion);
   document.addEventListener('visibilitychange', syncMotion);
   window.addEventListener('resize', resize, { passive:true });
   window.addEventListener('pointermove', event => {
-    if (reducedMotion.matches || !finePointer.matches) return;
-    pointerX = event.clientX / width * 2 - 1;
-    pointerY = event.clientY / height * 2 - 1;
+    if (reducedMotion.matches || !finePointer.matches || event.pointerType === 'touch') return;
+    const now = performance.now();
+    const next = {x:event.clientX, y:event.clientY, time:now};
+    if (pointer && now - pointer.time < 140) {
+      const dx = next.x - pointer.x, dy = next.y - pointer.y;
+      const distance = Math.hypot(dx,dy);
+      if (distance > .5) {
+        // Sweep the whole movement, so fast crossings cannot jump over a trail.
+        const steps = Math.min(16, Math.max(1, Math.ceil(distance / 12)));
+        for (let i = 1; i <= steps; i++) {
+          const x = pointer.x + dx * i / steps, y = pointer.y + dy * i / steps;
+          stir(x,y,dx / steps,dy / steps);
+          scatter(x,y,dx / steps,dy / steps);
+        }
+      }
+    }
+    pointer = next;
   }, { passive:true });
-  document.documentElement.addEventListener('pointerleave', () => { pointerX = pointerY = 0; });
+  document.documentElement.addEventListener('pointerleave', () => { pointer = null; });
   resize();
   syncMotion();
 })();
