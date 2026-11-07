@@ -170,22 +170,12 @@ h1 {
   margin:0 0 26px;
 }
 
-.wordmark-mask {
-  position:absolute;
-  pointer-events:none;
-}
-
 .wordmark-impact-light {
   position:fixed;
   top:0;
   left:0;
   z-index:1;
   pointer-events:none;
-}
-
-.star-struck {
-  -webkit-mask-image:url(#wordmark-impact-mask);
-  mask-image:url(#wordmark-impact-mask);
 }
 
 h1 span,.footer-wordmark span {

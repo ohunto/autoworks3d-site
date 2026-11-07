@@ -8,9 +8,6 @@
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
   const wordmark = document.querySelector('[data-star-wordmark]');
-  const wordmarkMask = document.querySelector('#wordmark-impact-mask');
-  const maskBacking = wordmarkMask?.querySelector('rect');
-  const maskCut = wordmarkMask?.querySelector('path');
   const wordmarkLight = document.querySelector('.wordmark-impact-light');
   const wordmarkHits = [];
   const impactDuration = 1.16;
@@ -210,7 +207,7 @@
   function readWordmark() {
     logoDirty = false;
     const rect = wordmark.getBoundingClientRect();
-    if (!rect.width || !rect.height || !maskBacking || !maskCut || !wordmarkLight) { logo = null; return; }
+    if (!rect.width || !rect.height || !wordmarkLight) { logo = null; return; }
     const style = getComputedStyle(wordmark);
     const font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
     const scale = Math.min(window.devicePixelRatio || 1, 2);
@@ -254,12 +251,6 @@
     wordmarkLight.style.width = `${wordmarkLight.width / scale}px`;
     wordmarkLight.style.height = `${wordmarkLight.height / scale}px`;
     lightCtx.setTransform(scale, 0, 0, scale, lightPadding * scale, lightPadding * scale);
-    for (const node of [wordmarkMask, maskBacking]) {
-      node.setAttribute('x', -lightPadding);
-      node.setAttribute('y', -lightPadding);
-      node.setAttribute('width', layerWidth);
-      node.setAttribute('height', layerHeight);
-    }
   }
 
   function inkAt(x, y) {
@@ -315,9 +306,7 @@
   }
 
   function hideWordmarkImpact() {
-    if (!wordmarkLight || wordmarkLight.hidden) return;
-    wordmarkLight.hidden = true;
-    wordmark.classList.remove('star-struck');
+    if (wordmarkLight && !wordmarkLight.hidden) wordmarkLight.hidden = true;
   }
 
   function clearWordmarkHits() {
@@ -341,8 +330,16 @@
     return `M${points.join('L')}Z`;
   }
 
-  function paintHotEdge(hit, chip, age) {
+  function paintChip(hit, chip, age) {
     const heat = Math.exp(-age * 2.1) * (1 - ease((age - .67) / .49));
+    const shade = 1 - ease((age - .40) / .76);
+    const recess = lightCtx.createLinearGradient(hit.x, hit.y, hit.x + hit.nx * hit.size, hit.y + hit.ny * hit.size);
+    recess.addColorStop(0, `rgba(5, 9, 14, ${shade})`);
+    recess.addColorStop(.7, `rgba(6, 13, 20, ${shade})`);
+    recess.addColorStop(1, `rgba(14, 33, 46, ${shade})`);
+    lightCtx.fillStyle = recess;
+    lightCtx.fill(chip);
+
     const edge = lightCtx.createLinearGradient(hit.x, hit.y, hit.x + hit.nx * hit.size, hit.y + hit.ny * hit.size);
     const color = hit.amber ? '255, 173, 91' : '100, 220, 255';
     edge.addColorStop(0, `rgba(${color}, ${heat * .44})`);
@@ -389,27 +386,17 @@
     if (!logo || !wordmarkHits.length) { hideWordmarkImpact(); return; }
     lightCtx.clearRect(-lightPadding, -lightPadding, wordmarkLight.width / logo.scale, wordmarkLight.height / logo.scale);
     lightCtx.save();
-    const cut = [];
     for (const hit of wordmarkHits) {
       const age = elapsed - hit.time;
-      const profile = chipProfile(hit, age);
-      cut.push(profile);
-      paintHotEdge(hit, new Path2D(profile), age);
+      paintChip(hit, new Path2D(chipProfile(hit, age)), age);
     }
-    const shape = cut.join(' ');
-    // Light catches the chipped surface and the opening remains transparent.
+    // Clip only the painted marks to the letters. The heading itself is never masked.
     lightCtx.globalCompositeOperation = 'destination-in';
     lightCtx.drawImage(logo.stencil, 0, 0, logo.w / logo.scale, logo.h / logo.scale);
-    lightCtx.globalCompositeOperation = 'destination-out';
-    lightCtx.fill(new Path2D(shape));
     lightCtx.globalCompositeOperation = 'lighter';
     for (const hit of wordmarkHits) paintContactLight(hit, elapsed - hit.time);
     lightCtx.restore();
-    maskCut.setAttribute('d', shape);
-    if (wordmarkLight.hidden) {
-      wordmark.classList.add('star-struck');
-      wordmarkLight.hidden = false;
-    }
+    if (wordmarkLight.hidden) wordmarkLight.hidden = false;
   }
 
   function newMeteor() {
