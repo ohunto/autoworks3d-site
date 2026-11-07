@@ -373,10 +373,15 @@
   }
 
   function newMeteor() {
-    const corner = Math.floor(random(0, 4));
-    const left = corner < 2, top = corner % 2 === 0;
-    const from = [left ? -.08 : 1.08, top ? -.08 : 1.08];
-    const to = [left ? 1 + random(.04, .095) : -random(.04, .095), top ? 1.07 : -.07];
+    const entryEdge = Math.floor(random(0, 4));
+    const entry = edgePoint(entryEdge);
+    let exit = edgePoint((entryEdge + Math.floor(random(1, 4))) % 4);
+    if (Math.hypot((exit[0] - entry[0]) * width, (exit[1] - entry[1]) * height) < Math.min(width, height) * .65) {
+      exit = edgePoint((entryEdge + 2) % 4);
+    }
+    const dx = exit[0] - entry[0], dy = exit[1] - entry[1];
+    const from = [entry[0] - dx * .08, entry[1] - dy * .08];
+    const to = [exit[0] + dx * .08, exit[1] + dy * .08];
     return fitPath({from, to, start:elapsed, duration:random(1.36, 1.72), progress:0});
   }
 
