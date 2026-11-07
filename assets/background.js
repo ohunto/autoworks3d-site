@@ -20,7 +20,7 @@
   let width = 0, height = 0, pixelRatio = 0;
   let frame = 0, lastTime = 0, elapsed = 0;
   let pointer = null;
-  let meteor = null, nextMeteor = random(25, 45);
+  let meteor = null, nextMeteor = random(15, 20);
   let logoDirty = true, logo = null, lightCtx = null;
 
   function fitPath(path) {
@@ -383,7 +383,7 @@
   function updateMeteor() {
     if (!meteor && elapsed >= nextMeteor) {
       meteor = newMeteor();
-      nextMeteor = elapsed + random(70, 125);
+      nextMeteor = elapsed + random(15, 20);
     }
     if (!meteor) return;
     const age = elapsed - meteor.start;
