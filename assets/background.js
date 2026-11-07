@@ -320,16 +320,19 @@
     const depth = hit.size * (.61 + .48 * hit.incidence) * open;
     const shoulder = Math.min(4, half * .62);
     const shear = hit.skew * depth * .73;
-    const profile = [[-1.08,-1],[-.98,-.15],[-.76,.18],[-.48,.42],[-.26,.8],[.12,1],[.48,.76],[.73,.38],[.98,.09],[1.12,-1]];
-    const chip = new Path2D();
-    for (const [index, [u, v]] of profile.entries()) {
+    const point = (u, v) => {
       const tangent = u * half + Math.max(0, v) * shear;
       const normal = v * (v < 0 ? shoulder : depth);
-      const x = hit.x - hit.ny * tangent + hit.nx * normal;
-      const y = hit.y + hit.nx * tangent + hit.ny * normal;
-      if (index === 0) chip.moveTo(x, y);
-      else chip.lineTo(x, y);
-    }
+      return [hit.x - hit.ny * tangent + hit.nx * normal, hit.y + hit.nx * tangent + hit.ny * normal];
+    };
+    const chip = new Path2D();
+    chip.moveTo(...point(-1.08, -1));
+    chip.lineTo(...point(-.98, -.15));
+    chip.lineTo(...point(-.76, .18));
+    // Match tangents at the deepest point so the cut has a rounded floor.
+    chip.bezierCurveTo(...point(-.56, .48), ...point(-.38, 1), ...point(.12, 1));
+    chip.bezierCurveTo(...point(.62, 1), ...point(.79, .36), ...point(.98, .09));
+    chip.lineTo(...point(1.12, -1));
     chip.closePath();
 
     // The cut covers the original edge. A soft front reveals the letter from the inside out.
