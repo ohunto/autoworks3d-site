@@ -10,7 +10,7 @@
   const wordmark = document.querySelector('[data-star-wordmark]');
   const wordmarkLight = document.querySelector('.wordmark-impact-light');
   const wordmarkHits = [];
-  const impactDuration = 1.16;
+  const impactDuration = 1.84;
   const lightPadding = 28;
   const paths = [], stars = [], flashes = [];
   const clamp = value => Math.max(0, Math.min(1, value));
@@ -242,7 +242,7 @@
         ink.fillText(node.data[i], range.getBoundingClientRect().left - rect.left, baseline);
       }
     }
-    logo = {rect, w, h, font, size, scale, stencil, pixels:ink.getImageData(0, 0, w, h).data};
+    logo = {rect, w, h, font, size, scale, pixels:ink.getImageData(0, 0, w, h).data};
 
     const layerWidth = rect.width + lightPadding * 2;
     const layerHeight = rect.height + lightPadding * 2;
@@ -314,50 +314,45 @@
     hideWordmarkImpact();
   }
 
-  function chipProfile(hit, age) {
-    const open = .24 + .76 * ease(age / .065);
-    const remaining = 1 - ease((age - .18) / (impactDuration - .18));
-    const half = hit.size * (.54 + .24 * (1 - hit.incidence)) * open * Math.sqrt(remaining);
-    const depth = hit.size * (.61 + .48 * hit.incidence) * open * remaining;
-    const shoulder = Math.min(2.6, half * .4);
+  function paintChip(hit, age) {
+    const open = .44 + .56 * ease(age / .06);
+    const half = hit.size * (.54 + .24 * (1 - hit.incidence)) * open;
+    const depth = hit.size * (.61 + .48 * hit.incidence) * open;
+    const shoulder = Math.min(4, half * .62);
     const shear = hit.skew * depth * .73;
-    const profile = [[-1.08,-1],[-.92,.12],[-.53,.39],[-.28,.77],[.12,1],[.48,.76],[.72,.34],[.98,.11],[1.12,-1]];
-    const points = profile.map(([u, v]) => {
+    const profile = [[-1.08,-1],[-.98,-.15],[-.76,.18],[-.48,.42],[-.26,.8],[.12,1],[.48,.76],[.73,.38],[.98,.09],[1.12,-1]];
+    const chip = new Path2D();
+    for (const [index, [u, v]] of profile.entries()) {
       const tangent = u * half + Math.max(0, v) * shear;
       const normal = v * (v < 0 ? shoulder : depth);
-      return `${(hit.x - hit.ny * tangent + hit.nx * normal).toFixed(2)} ${(hit.y + hit.nx * tangent + hit.ny * normal).toFixed(2)}`;
-    });
-    return `M${points.join('L')}Z`;
-  }
+      const x = hit.x - hit.ny * tangent + hit.nx * normal;
+      const y = hit.y + hit.nx * tangent + hit.ny * normal;
+      if (index === 0) chip.moveTo(x, y);
+      else chip.lineTo(x, y);
+    }
+    chip.closePath();
 
-  function paintChip(hit, chip, age) {
-    const heat = Math.exp(-age * 2.1) * (1 - ease((age - .67) / .49));
-    const shade = 1 - ease((age - .40) / .76);
-    const recess = lightCtx.createLinearGradient(hit.x, hit.y, hit.x + hit.nx * hit.size, hit.y + hit.ny * hit.size);
-    recess.addColorStop(0, `rgba(5, 9, 14, ${shade})`);
-    recess.addColorStop(.7, `rgba(6, 13, 20, ${shade})`);
-    recess.addColorStop(1, `rgba(14, 33, 46, ${shade})`);
+    // The cut covers the original edge. A soft front reveals the letter from the inside out.
+    const refill = ease((age - .16) / (impactDuration - .16));
+    const curve = hit.size * 3;
+    const feather = .75 + hit.size * .1;
+    const x = hit.x - hit.nx * curve, y = hit.y - hit.ny * curve;
+    const deep = Math.hypot(curve + depth, half + Math.abs(shear)) + feather;
+    const edge = curve - shoulder - feather;
+    const front = deep + (edge - deep) * refill;
+    const recess = lightCtx.createRadialGradient(x, y, Math.max(0, front - feather), x, y, front + feather);
+    const leftLight = clamp(1 - (logo.rect.left + hit.x) / (width * .51));
+    const sky = width <= 600 ? '10, 17, 23' : `${5 + 5 * leftLight}, ${9 + 8 * leftLight}, ${14 + 9 * leftLight}`;
+    recess.addColorStop(0, `rgba(${sky}, 1)`);
+    recess.addColorStop(1, `rgba(${sky}, 0)`);
     lightCtx.fillStyle = recess;
     lightCtx.fill(chip);
-
-    const edge = lightCtx.createLinearGradient(hit.x, hit.y, hit.x + hit.nx * hit.size, hit.y + hit.ny * hit.size);
-    const color = hit.amber ? '255, 173, 91' : '100, 220, 255';
-    edge.addColorStop(0, `rgba(${color}, ${heat * .44})`);
-    edge.addColorStop(.53, `rgba(${color}, ${heat * .94})`);
-    edge.addColorStop(1, `rgba(${color}, ${heat * .60})`);
-    lightCtx.lineJoin = 'round';
-    lightCtx.strokeStyle = hit.amber ? `rgba(137, 53, 12, ${heat * .61})` : `rgba(13, 76, 115, ${heat * .64})`;
-    lightCtx.lineWidth = Math.max(2.2, hit.size * .34);
-    lightCtx.stroke(chip);
-    lightCtx.strokeStyle = edge;
-    lightCtx.lineWidth = Math.max(1.1, hit.size * .15);
-    lightCtx.stroke(chip);
   }
 
   function paintContactLight(hit, age) {
     const pulse = Math.exp(-age * 16) * (1 - ease(age / .24));
     if (pulse < .012) return;
-    const x = hit.x - hit.nx * 1.6, y = hit.y - hit.ny * 1.6;
+    const x = hit.x - hit.nx * 2.6, y = hit.y - hit.ny * 2.6;
     const radius = Math.min(lightPadding - 2, 7 + hit.size * 1.14 + age * 21);
     const tint = hit.amber ? '255, 168, 72' : '89, 211, 255';
     const halo = lightCtx.createRadialGradient(x, y, 0, x, y, radius);
@@ -367,32 +362,13 @@
     halo.addColorStop(1, `rgba(${tint}, 0)`);
     lightCtx.fillStyle = halo;
     lightCtx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
-
-    const spread = 2 + hit.size * .65;
-    const tx = -hit.ny * spread, ty = hit.nx * spread;
-    const glint = lightCtx.createLinearGradient(x - tx, y - ty, x + tx, y + ty);
-    glint.addColorStop(0, `rgba(${tint}, 0)`);
-    glint.addColorStop(.5, `rgba(243, 251, 255, ${pulse * .82})`);
-    glint.addColorStop(1, `rgba(${tint}, 0)`);
-    lightCtx.strokeStyle = glint;
-    lightCtx.lineWidth = Math.max(.7, hit.size * .085);
-    lightCtx.beginPath();
-    lightCtx.moveTo(x - tx, y - ty);
-    lightCtx.lineTo(x + tx, y + ty);
-    lightCtx.stroke();
   }
 
   function drawWordmarkImpact() {
     if (!logo || !wordmarkHits.length) { hideWordmarkImpact(); return; }
     lightCtx.clearRect(-lightPadding, -lightPadding, wordmarkLight.width / logo.scale, wordmarkLight.height / logo.scale);
     lightCtx.save();
-    for (const hit of wordmarkHits) {
-      const age = elapsed - hit.time;
-      paintChip(hit, new Path2D(chipProfile(hit, age)), age);
-    }
-    // Clip only the painted marks to the letters. The heading itself is never masked.
-    lightCtx.globalCompositeOperation = 'destination-in';
-    lightCtx.drawImage(logo.stencil, 0, 0, logo.w / logo.scale, logo.h / logo.scale);
+    for (const hit of wordmarkHits) paintChip(hit, elapsed - hit.time);
     lightCtx.globalCompositeOperation = 'lighter';
     for (const hit of wordmarkHits) paintContactLight(hit, elapsed - hit.time);
     lightCtx.restore();
