@@ -170,6 +170,12 @@ h1 {
   margin:0 0 26px;
 }
 
+.star-struck {
+  --star-mask:radial-gradient(circle at var(--star-x) var(--star-y), transparent calc(var(--star-notch) * .62), #000 var(--star-notch));
+  -webkit-mask-image:var(--star-mask);
+  mask-image:var(--star-mask);
+}
+
 h1 span,.footer-wordmark span {
   background:linear-gradient(135deg,#b8f6ff 5%,#48d6ef 48%,#1596be 100%);
   background-clip:text;
