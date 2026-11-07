@@ -170,19 +170,22 @@ h1 {
   margin:0 0 26px;
 }
 
-.wordmark-impact-light {
-  position:fixed;
-  top:0;
-  left:0;
-  z-index:1;
-  pointer-events:none;
+.wordmark-letter {
+  display:inline-block;
+  letter-spacing:0;
+  transform-origin:50% 60%;
 }
 
-h1 span,.footer-wordmark span {
+.wordmark-letter.is-whizzing {
+  will-change:transform;
+}
+
+.wordmark-blue,.footer-wordmark span {
   background:linear-gradient(135deg,#b8f6ff 5%,#48d6ef 48%,#1596be 100%);
   background-clip:text;
   -webkit-background-clip:text;
   color:transparent;
+  background-repeat:no-repeat;
 }
 
 .description {
