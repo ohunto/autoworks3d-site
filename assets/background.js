@@ -292,7 +292,7 @@
         const {ux, uy} = shot.path;
         const normal = magnitude > .04 && gx * ux + gy * uy > 0;
         const nx = normal ? gx / magnitude : ux, ny = normal ? gy / magnitude : uy;
-        return {x, y, t, nx, ny, incidence:clamp(nx * ux + ny * uy), skew:nx * uy - ny * ux};
+        return {x, y, t, nx, ny, incidence:clamp(nx * ux + ny * uy)};
       }
       inside = next;
     }
@@ -316,23 +316,17 @@
 
   function paintChip(hit, age) {
     const open = .44 + .56 * ease(age / .06);
-    const half = hit.size * (.54 + .24 * (1 - hit.incidence)) * open;
-    const depth = hit.size * (.61 + .48 * hit.incidence) * open;
+    const half = hit.size * (.94 + .10 * (1 - hit.incidence)) * open;
+    const depth = hit.size * (.34 + .13 * hit.incidence) * open;
     const shoulder = Math.min(4, half * .62);
-    const shear = hit.skew * depth * .73;
-    const point = (u, v) => {
-      const tangent = u * half + Math.max(0, v) * shear;
-      const normal = v * (v < 0 ? shoulder : depth);
-      return [hit.x - hit.ny * tangent + hit.nx * normal, hit.y + hit.nx * tangent + hit.ny * normal];
-    };
+    const setback = hit.size * .18 * open;
+    const rise = depth + setback;
+    const rimAngle = Math.asin(Math.max(-1, (setback - shoulder) / rise));
+    const rotation = Math.atan2(-hit.nx, hit.ny);
     const chip = new Path2D();
-    chip.moveTo(...point(-1.08, -1));
-    chip.lineTo(...point(-.98, -.15));
-    chip.lineTo(...point(-.76, .18));
-    // Match tangents at the deepest point so the cut has a rounded floor.
-    chip.bezierCurveTo(...point(-.56, .48), ...point(-.38, 1), ...point(.12, 1));
-    chip.bezierCurveTo(...point(.62, 1), ...point(.79, .36), ...point(.98, .09));
-    chip.lineTo(...point(1.12, -1));
+    // Keep the curved floor and close the oval just outside the letter edge.
+    chip.ellipse(hit.x - hit.nx * setback, hit.y - hit.ny * setback,
+      half, rise, rotation, rimAngle, Math.PI - rimAngle);
     chip.closePath();
 
     // The cut covers the original edge. A soft front reveals the letter from the inside out.
@@ -340,7 +334,7 @@
     const curve = hit.size * 3;
     const feather = .75 + hit.size * .1;
     const x = hit.x - hit.nx * curve, y = hit.y - hit.ny * curve;
-    const deep = Math.hypot(curve + depth, half + Math.abs(shear)) + feather;
+    const deep = Math.hypot(curve + depth, half) + feather;
     const edge = curve - shoulder - feather;
     const front = deep + (edge - deep) * refill;
     const recess = lightCtx.createRadialGradient(x, y, Math.max(0, front - feather), x, y, front + feather);
