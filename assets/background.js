@@ -129,13 +129,16 @@
         const across = moving.position * other.length;
         if (across < other.from || across > other.to) continue;
         const distance = crossed.reverse ? 1 - across / other.length : across / other.length;
-        const freshness = clamp(1 - trailAge(crossed, distance, other) / crossed.fade);
-        if (freshness < .15) continue;
+        const ageAtCrossing = Math.max(0, trailAge(crossed, distance, other));
+        const fadeProgress = clamp((ageAtCrossing - 1.2) / (crossed.fade - 1.2));
+        const visibleTrail = 1 - fadeProgress * fadeProgress * (3 - 2 * fadeProgress);
+        const brightness = visibleTrail * (.28 + .72 * Math.exp(-ageAtCrossing / .9));
+        if (brightness < .035) continue;
         const vertical = moving.vertical ? moving : crossed;
         const horizontal = moving.vertical ? crossed : moving;
         if (crossings.some(c => c.vertical === vertical && c.horizontal === horizontal && elapsed - c.time < 1.2)) continue;
         crossings.push({vertical, horizontal, target:crossed, x:vertical.position * width, y:horizontal.position * height,
-          time:elapsed, strength:.5 + freshness * .5, direction:moving.reverse ? -1 : 1});
+          time:elapsed, strength:Math.pow(brightness, .85), direction:moving.reverse ? -1 : 1});
       }
     }
   }
@@ -154,7 +157,7 @@
       if (path !== crossing.target) continue;
       const distance = along - (path.vertical ? crossing.y : crossing.x);
       const {envelope, life} = wakeShape(crossing, distance);
-      offset += envelope * life * 25 * crossing.strength * crossing.direction;
+      offset += envelope * life * 20 * crossing.strength * crossing.direction;
     }
     return offset;
   }
@@ -190,7 +193,7 @@
           if (along < path.live.from || along > path.live.to) continue;
           const envelope = Math.exp(-d * d / (2 * spread * spread));
           const fold = Math.sin(d / spread * 2.4 + layer * .55) * (5 + age * 3);
-          const drift = (25 + fold + layer * (3 + age * 2)) * envelope * life * crossing.strength * crossing.direction;
+          const drift = (20 + fold + layer * (3 + age * 2)) * envelope * life * crossing.strength * crossing.direction;
           const x = path.vertical ? cross + drift : along;
           const y = path.vertical ? along : cross + drift;
           const bend = displacement(x, y);
@@ -200,7 +203,7 @@
         const gradient = path.vertical
           ? ctx.createLinearGradient(cross, center - extent, cross, center + extent)
           : ctx.createLinearGradient(center - extent, cross, center + extent, cross);
-        const alpha = life * crossing.strength * .23;
+        const alpha = life * crossing.strength * .18;
         gradient.addColorStop(0, 'rgba(105, 191, 223, 0)');
         gradient.addColorStop(.35, `rgba(105, 191, 223, ${alpha})`);
         gradient.addColorStop(.5, `rgba(153, 217, 239, ${alpha * 1.25})`);
