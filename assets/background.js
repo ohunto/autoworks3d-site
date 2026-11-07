@@ -8,6 +8,13 @@
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
   const wordmark = document.querySelector('[data-star-wordmark]');
+  const wordmarkMask = document.querySelector('#wordmark-impact-mask');
+  const maskBacking = wordmarkMask?.querySelector('rect');
+  const maskCut = wordmarkMask?.querySelector('path');
+  const wordmarkLight = document.querySelector('.wordmark-impact-light');
+  const wordmarkHits = [];
+  const impactDuration = 1.16;
+  const lightPadding = 28;
   const paths = [], stars = [], flashes = [];
   const clamp = value => Math.max(0, Math.min(1, value));
   const ease = value => { const t = clamp(value); return t * t * (3 - 2 * t); };
@@ -17,7 +24,7 @@
   let frame = 0, lastTime = 0, elapsed = 0;
   let pointer = null;
   let meteor = null, nextMeteor = random(25, 45);
-  let logoDirty = true, logo = null, logoHit = null;
+  let logoDirty = true, logo = null, lightCtx = null;
 
   function fitPath(path) {
     path.x = path.from[0] * width;
@@ -157,10 +164,23 @@
     }
   }
 
+  function stopShot(shot, t) {
+    const {path} = shot;
+    shot.to = shot.from + (shot.to - shot.from) * t;
+    path.stoppedAt = elapsed;
+    path.restartAt = elapsed + random(3.6, 6.4);
+    path.live.progress = shot.to / path.length;
+    path.live.to = clamp(path.live.progress) * path.length;
+    shot.x1 = path.x + path.ux * shot.to;
+    shot.y1 = path.y + path.uy * shot.to;
+  }
+
   function collide(sweeps) {
     const contacts = [];
     for (let i = 0; i < sweeps.length; i++) {
       const a = sweeps[i];
+      const surface = wordmarkContact(a);
+      if (surface) contacts.push({a, t:surface.t, surface});
       for (let j = i + 1; j < sweeps.length; j++) {
         const b = sweeps[j];
         const x = a.x0 - b.x0, y = a.y0 - b.y0;
@@ -175,30 +195,29 @@
       }
     }
     contacts.sort((a, b) => a.t - b.t);
-    for (const {a, b, t, x, y} of contacts) {
-      if (a.path.stoppedAt !== null || b.path.stoppedAt !== null) continue;
-      for (const shot of [a, b]) {
-        const {path} = shot;
-        const end = shot.from + (shot.to - shot.from) * t;
-        path.stoppedAt = elapsed;
-        path.restartAt = elapsed + random(3.6, 6.4);
-        path.live.progress = end / path.length;
-        path.live.to = clamp(path.live.progress) * path.length;
-        shot.x1 = path.x + path.ux * end;
-        shot.y1 = path.y + path.uy * end;
+    for (const {a, b, t, x, y, surface} of contacts) {
+      if (a.path.stoppedAt !== null || (b && b.path.stoppedAt !== null)) continue;
+      stopShot(a, t);
+      if (surface) {
+        strikeWordmark(a, surface);
+      } else {
+        stopShot(b, t);
+        flashes.push({x, y, time:elapsed});
       }
-      flashes.push({x, y, time:elapsed});
     }
   }
 
   function readWordmark() {
     logoDirty = false;
     const rect = wordmark.getBoundingClientRect();
-    if (!rect.width || !rect.height) { logo = null; return; }
+    if (!rect.width || !rect.height || !maskBacking || !maskCut || !wordmarkLight) { logo = null; return; }
     const style = getComputedStyle(wordmark);
     const font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-    const w = Math.ceil(rect.width), h = Math.ceil(rect.height);
-    if (logo?.w === w && logo.h === h && logo.font === font) {
+    const scale = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.ceil(rect.width * scale), h = Math.ceil(rect.height * scale);
+    wordmarkLight.style.transform = `translate(${rect.left - lightPadding}px, ${rect.top - lightPadding}px)`;
+    if (logo?.w === w && logo.h === h && logo.font === font && logo.scale === scale &&
+      logo.rect.width === rect.width && logo.rect.height === rect.height) {
       logo.rect = rect;
       return;
     }
@@ -206,7 +225,9 @@
     stencil.width = w;
     stencil.height = h;
     const ink = stencil.getContext('2d', {willReadFrequently:true});
-    if (!ink) { logo = null; return; }
+    lightCtx ??= wordmarkLight.getContext('2d');
+    if (!ink || !lightCtx) { logo = null; return; }
+    ink.setTransform(scale, 0, 0, scale, 0, 0);
     ink.font = font;
     const size = parseFloat(style.fontSize);
     const metrics = ink.measureText(wordmark.textContent);
@@ -224,37 +245,171 @@
         ink.fillText(node.data[i], range.getBoundingClientRect().left - rect.left, baseline);
       }
     }
-    logo = {rect, w, h, font, size, pixels:ink.getImageData(0, 0, w, h).data};
-  }
+    logo = {rect, w, h, font, size, scale, stencil, pixels:ink.getImageData(0, 0, w, h).data};
 
-  function strikeWordmark(shot) {
-    if (!logo || logoHit || shot.path.hitWordmark) return;
-    const dx = shot.x1 - shot.x0, dy = shot.y1 - shot.y0;
-    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 1.5));
-    for (let i = 0; i <= steps; i++) {
-      const x = shot.x0 + dx * i / steps - logo.rect.left;
-      const y = shot.y0 + dy * i / steps - logo.rect.top;
-      if (x < 0 || y < 0 || x >= logo.w || y >= logo.h) continue;
-      if (logo.pixels[(Math.floor(y) * logo.w + Math.floor(x)) * 4 + 3] < 115) continue;
-      shot.path.hitWordmark = true;
-      logoHit = {x, y, time:elapsed, radius:Math.min(7.5, logo.size * .095)};
-      wordmark.style.setProperty('--star-x', `${x}px`);
-      wordmark.style.setProperty('--star-y', `${y}px`);
-      wordmark.classList.add('star-struck');
-      return;
+    const layerWidth = rect.width + lightPadding * 2;
+    const layerHeight = rect.height + lightPadding * 2;
+    wordmarkLight.width = Math.ceil(layerWidth * scale);
+    wordmarkLight.height = Math.ceil(layerHeight * scale);
+    wordmarkLight.style.width = `${wordmarkLight.width / scale}px`;
+    wordmarkLight.style.height = `${wordmarkLight.height / scale}px`;
+    lightCtx.setTransform(scale, 0, 0, scale, lightPadding * scale, lightPadding * scale);
+    for (const node of [wordmarkMask, maskBacking]) {
+      node.setAttribute('x', -lightPadding);
+      node.setAttribute('y', -lightPadding);
+      node.setAttribute('width', layerWidth);
+      node.setAttribute('height', layerHeight);
     }
   }
 
-  function clearWordmarkHit() {
-    if (logoHit) wordmark.classList.remove('star-struck');
-    logoHit = null;
+  function inkAt(x, y) {
+    const px = x * logo.scale - .5, py = y * logo.scale - .5;
+    const col = Math.floor(px), row = Math.floor(py);
+    const fx = px - col, fy = py - row;
+    const sample = (cx, cy) => cx < 0 || cy < 0 || cx >= logo.w || cy >= logo.h
+      ? 0 : logo.pixels[(cy * logo.w + cx) * 4 + 3] / 255;
+    const top = sample(col, row) * (1 - fx) + sample(col + 1, row) * fx;
+    const bottom = sample(col, row + 1) * (1 - fx) + sample(col + 1, row + 1) * fx;
+    return top * (1 - fy) + bottom * fy;
   }
 
-  function updateWordmark() {
-    if (!logoHit) return;
-    const age = elapsed - logoHit.time;
-    const size = logoHit.radius * ease(age / .065) * (1 - ease(age / .68));
-    wordmark.style.setProperty('--star-notch', `${size}px`);
+  function wordmarkContact(shot) {
+    if (!logo || shot.path.hitWordmark) return null;
+    const {rect} = logo;
+    const x0 = shot.x0 - rect.left, y0 = shot.y0 - rect.top;
+    const x1 = shot.x1 - rect.left, y1 = shot.y1 - rect.top;
+    if (Math.max(x0, x1) < 0 || Math.min(x0, x1) > rect.width ||
+      Math.max(y0, y1) < 0 || Math.min(y0, y1) > rect.height) return null;
+    const dx = shot.x1 - shot.x0, dy = shot.y1 - shot.y0;
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / .85));
+    let inside = inkAt(x0, y0) >= .5;
+    for (let i = 1; i <= steps; i++) {
+      const next = inkAt(x0 + dx * i / steps, y0 + dy * i / steps) >= .5;
+      if (!inside && next) {
+        // Resolve the edge between samples so the star reaches the letter before it stops.
+        let lo = (i - 1) / steps, hi = i / steps;
+        for (let step = 0; step < 4; step++) {
+          const mid = (lo + hi) * .5;
+          if (inkAt(x0 + dx * mid, y0 + dy * mid) >= .5) hi = mid;
+          else lo = mid;
+        }
+        const t = (lo + hi) * .5;
+        const x = x0 + dx * t, y = y0 + dy * t;
+        const gx = inkAt(x + 1.8, y) - inkAt(x - 1.8, y);
+        const gy = inkAt(x, y + 1.8) - inkAt(x, y - 1.8);
+        const magnitude = Math.hypot(gx, gy);
+        const {ux, uy} = shot.path;
+        const normal = magnitude > .04 && gx * ux + gy * uy > 0;
+        const nx = normal ? gx / magnitude : ux, ny = normal ? gy / magnitude : uy;
+        return {x, y, t, nx, ny, incidence:clamp(nx * ux + ny * uy), skew:nx * uy - ny * ux};
+      }
+      inside = next;
+    }
+    return null;
+  }
+
+  function strikeWordmark(shot, contact, amber = false) {
+    shot.path.hitWordmark = true;
+    if (wordmarkHits.length === 3) wordmarkHits.shift();
+    wordmarkHits.push({...contact, time:elapsed, amber, size:Math.min(17, logo.size * .113)});
+  }
+
+  function hideWordmarkImpact() {
+    if (!wordmarkLight || wordmarkLight.hidden) return;
+    wordmarkLight.hidden = true;
+    wordmark.classList.remove('star-struck');
+  }
+
+  function clearWordmarkHits() {
+    wordmarkHits.length = 0;
+    hideWordmarkImpact();
+  }
+
+  function chipProfile(hit, age) {
+    const open = .24 + .76 * ease(age / .065);
+    const remaining = 1 - ease((age - .18) / (impactDuration - .18));
+    const half = hit.size * (.54 + .24 * (1 - hit.incidence)) * open * Math.sqrt(remaining);
+    const depth = hit.size * (.61 + .48 * hit.incidence) * open * remaining;
+    const shoulder = Math.min(2.6, half * .4);
+    const shear = hit.skew * depth * .73;
+    const profile = [[-1.08,-1],[-.92,.12],[-.53,.39],[-.28,.77],[.12,1],[.48,.76],[.72,.34],[.98,.11],[1.12,-1]];
+    const points = profile.map(([u, v]) => {
+      const tangent = u * half + Math.max(0, v) * shear;
+      const normal = v * (v < 0 ? shoulder : depth);
+      return `${(hit.x - hit.ny * tangent + hit.nx * normal).toFixed(2)} ${(hit.y + hit.nx * tangent + hit.ny * normal).toFixed(2)}`;
+    });
+    return `M${points.join('L')}Z`;
+  }
+
+  function paintHotEdge(hit, chip, age) {
+    const heat = Math.exp(-age * 2.1) * (1 - ease((age - .67) / .49));
+    const edge = lightCtx.createLinearGradient(hit.x, hit.y, hit.x + hit.nx * hit.size, hit.y + hit.ny * hit.size);
+    const color = hit.amber ? '255, 173, 91' : '100, 220, 255';
+    edge.addColorStop(0, `rgba(${color}, ${heat * .44})`);
+    edge.addColorStop(.53, `rgba(${color}, ${heat * .94})`);
+    edge.addColorStop(1, `rgba(${color}, ${heat * .60})`);
+    lightCtx.lineJoin = 'round';
+    lightCtx.strokeStyle = hit.amber ? `rgba(137, 53, 12, ${heat * .61})` : `rgba(13, 76, 115, ${heat * .64})`;
+    lightCtx.lineWidth = Math.max(2.2, hit.size * .34);
+    lightCtx.stroke(chip);
+    lightCtx.strokeStyle = edge;
+    lightCtx.lineWidth = Math.max(1.1, hit.size * .15);
+    lightCtx.stroke(chip);
+  }
+
+  function paintContactLight(hit, age) {
+    const pulse = Math.exp(-age * 16) * (1 - ease(age / .24));
+    if (pulse < .012) return;
+    const x = hit.x - hit.nx * 1.6, y = hit.y - hit.ny * 1.6;
+    const radius = Math.min(lightPadding - 2, 7 + hit.size * 1.14 + age * 21);
+    const tint = hit.amber ? '255, 168, 72' : '89, 211, 255';
+    const halo = lightCtx.createRadialGradient(x, y, 0, x, y, radius);
+    halo.addColorStop(0, `rgba(249, 253, 255, ${pulse * .99})`);
+    halo.addColorStop(.17, `rgba(211, 244, 255, ${pulse * .75})`);
+    halo.addColorStop(.42, `rgba(${tint}, ${pulse * .29})`);
+    halo.addColorStop(1, `rgba(${tint}, 0)`);
+    lightCtx.fillStyle = halo;
+    lightCtx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+
+    const spread = 2 + hit.size * .65;
+    const tx = -hit.ny * spread, ty = hit.nx * spread;
+    const glint = lightCtx.createLinearGradient(x - tx, y - ty, x + tx, y + ty);
+    glint.addColorStop(0, `rgba(${tint}, 0)`);
+    glint.addColorStop(.5, `rgba(243, 251, 255, ${pulse * .82})`);
+    glint.addColorStop(1, `rgba(${tint}, 0)`);
+    lightCtx.strokeStyle = glint;
+    lightCtx.lineWidth = Math.max(.7, hit.size * .085);
+    lightCtx.beginPath();
+    lightCtx.moveTo(x - tx, y - ty);
+    lightCtx.lineTo(x + tx, y + ty);
+    lightCtx.stroke();
+  }
+
+  function drawWordmarkImpact() {
+    if (!logo || !wordmarkHits.length) { hideWordmarkImpact(); return; }
+    lightCtx.clearRect(-lightPadding, -lightPadding, wordmarkLight.width / logo.scale, wordmarkLight.height / logo.scale);
+    lightCtx.save();
+    const cut = [];
+    for (const hit of wordmarkHits) {
+      const age = elapsed - hit.time;
+      const profile = chipProfile(hit, age);
+      cut.push(profile);
+      paintHotEdge(hit, new Path2D(profile), age);
+    }
+    const shape = cut.join(' ');
+    // Light catches the chipped surface and the opening remains transparent.
+    lightCtx.globalCompositeOperation = 'destination-in';
+    lightCtx.drawImage(logo.stencil, 0, 0, logo.w / logo.scale, logo.h / logo.scale);
+    lightCtx.globalCompositeOperation = 'destination-out';
+    lightCtx.fill(new Path2D(shape));
+    lightCtx.globalCompositeOperation = 'lighter';
+    for (const hit of wordmarkHits) paintContactLight(hit, elapsed - hit.time);
+    lightCtx.restore();
+    maskCut.setAttribute('d', shape);
+    if (wordmarkLight.hidden) {
+      wordmark.classList.add('star-struck');
+      wordmarkLight.hidden = false;
+    }
   }
 
   function newMeteor() {
@@ -278,13 +433,14 @@
     if (previous === meteor.progress) return;
     const shot = sweep(meteor, previous * meteor.length, meteor.progress * meteor.length);
     crossTrails(shot.x0, shot.y0, shot.x1, shot.y1, .95, meteor);
-    strikeWordmark(shot);
+    const surface = wordmarkContact(shot);
+    if (surface) strikeWordmark(shot, surface, true);
   }
 
   function advance() {
     if (!width || !height) return;
     if (wordmark && logoDirty && elapsed > 2.05) readWordmark();
-    if (logoHit && elapsed - logoHit.time > .68) clearWordmarkHit();
+    while (wordmarkHits.length && elapsed - wordmarkHits[0].time >= impactDuration) wordmarkHits.shift();
     updatePaths();
     const moving = [];
     for (const path of paths) {
@@ -295,11 +451,9 @@
     collide(moving);
     for (const shot of moving) {
       crossTrails(shot.x0, shot.y0, shot.x1, shot.y1, 1, shot.path);
-      strikeWordmark(shot);
     }
     while (flashes.length && elapsed - flashes[0].time > .7) flashes.shift();
     updateMeteor();
-    updateWordmark();
   }
 
   function line(x0, y0, x1, y1) {
@@ -440,8 +594,9 @@
     ctx.lineCap = 'round';
     for (const path of paths) {
       for (const wake of path.wakes) drawSmoke(path, wake);
-      if (path.live && path.stoppedAt === null) {
-        drawHead(path, path.live.progress * path.length, Math.min(170, path.length * .22), .82);
+      if (path.live && (path.stoppedAt === null || path.hitWordmark)) {
+        const drain = path.stoppedAt === null ? 0 : ease((elapsed - path.stoppedAt) / .24);
+        drawHead(path, path.live.progress * path.length, Math.min(170, path.length * .22) * (1 - drain * .56), .82 * (1 - drain));
       }
     }
     for (const flash of flashes) {
@@ -452,14 +607,9 @@
         [.39, `rgba(99, 190, 240, ${strength * .28})`], [1, 'rgba(80, 171, 232, 0)']
       ]);
     }
-    if (logoHit && logo) {
-      const strength = Math.exp(-(elapsed - logoHit.time) * 5);
-      glow(logo.rect.left + logoHit.x, logo.rect.top + logoHit.y, 20, [
-        [0, `rgba(174, 234, 255, ${strength * .7})`], [.4, `rgba(91, 196, 241, ${strength * .32})`], [1, 'rgba(91, 196, 241, 0)']
-      ]);
-    }
     drawMeteor();
     ctx.restore();
+    drawWordmarkImpact();
   }
 
   function resize() {
@@ -486,7 +636,7 @@
     makeStars();
     pointer = null;
     logoDirty = true;
-    clearWordmarkHit();
+    clearWordmarkHits();
     flashes.length = 0;
     updatePaths();
     draw();
@@ -510,7 +660,7 @@
     pointer = null;
     document.body.classList.toggle('motion-paused', reducedMotion.matches);
     if (reducedMotion.matches) {
-      clearWordmarkHit();
+      clearWordmarkHits();
       flashes.length = 0;
       for (const path of paths) path.wakes.length = 0;
       meteor = null;

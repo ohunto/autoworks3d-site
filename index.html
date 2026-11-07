@@ -23,8 +23,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="preload" href="/assets/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/assets/styles.css?v=20261106-night-sky">
-  <script src="/assets/background.js?v=20261106-night-sky" defer></script>
+  <link rel="stylesheet" href="/assets/styles.css?v=20261106-wordmark-impact">
+  <script src="/assets/background.js?v=20261106-wordmark-impact" defer></script>
   <title>AutoWorks3D — 3D-Printed Automotive Solutions</title>
 </head>
 <body>
@@ -35,6 +35,13 @@
     <div class="vignette"></div>
     <div class="grain"></div>
   </div>
+  <svg class="wordmark-mask" width="0" height="0" aria-hidden="true" focusable="false">
+    <mask id="wordmark-impact-mask" maskUnits="userSpaceOnUse" mask-type="luminance">
+      <rect fill="white" />
+      <path fill="black" />
+    </mask>
+  </svg>
+  <canvas class="wordmark-impact-light" aria-hidden="true" hidden></canvas>
   <main id="main-content">
     <div class="hero">
       <p class="eyebrow"><span></span> AUTOMOTIVE SOLUTIONS, REIMAGINED</p>
