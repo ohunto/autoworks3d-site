@@ -8,8 +8,10 @@
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
   const wordmark = document.querySelector('[data-star-wordmark]');
-  const wordmarkLetters = [];
-  let wordmarkFontsReady = !document.fonts;
+  const wordmarkLight = document.querySelector('.wordmark-impact-light');
+  const wordmarkHits = [];
+  const impactDuration = 1.84;
+  const lightPadding = 28;
   const paths = [], stars = [], flashes = [];
   const clamp = value => Math.max(0, Math.min(1, value));
   const ease = value => { const t = clamp(value); return t * t * (3 - 2 * t); };
@@ -19,7 +21,7 @@
   let frame = 0, lastTime = 0, elapsed = 0;
   let pointer = null;
   let meteor = null, nextMeteor = random(25, 45);
-  let logoDirty = true, logo = null;
+  let logoDirty = true, logo = null, lightCtx = null;
 
   function fitPath(path) {
     path.x = path.from[0] * width;
@@ -174,6 +176,8 @@
     const contacts = [];
     for (let i = 0; i < sweeps.length; i++) {
       const a = sweeps[i];
+      const surface = wordmarkContact(a);
+      if (surface) contacts.push({a, t:surface.t, surface});
       for (let j = i + 1; j < sweeps.length; j++) {
         const b = sweeps[j];
         const x = a.x0 - b.x0, y = a.y0 - b.y0;
@@ -188,162 +192,184 @@
       }
     }
     contacts.sort((a, b) => a.t - b.t);
-    for (const {a, b, t, x, y} of contacts) {
-      if (a.path.stoppedAt !== null || b.path.stoppedAt !== null) continue;
+    for (const {a, b, t, x, y, surface} of contacts) {
+      if (a.path.stoppedAt !== null || (b && b.path.stoppedAt !== null)) continue;
       stopShot(a, t);
-      stopShot(b, t);
-      flashes.push({x, y, time:elapsed});
-    }
-  }
-
-  function resetWordmarkMotion() {
-    for (const letter of wordmarkLetters) {
-      letter.pulses.length = 0;
-      letter.element.style.transform = '';
-      letter.element.classList.remove('is-whizzing');
+      if (surface) {
+        strikeWordmark(a, surface);
+      } else {
+        stopShot(b, t);
+        flashes.push({x, y, time:elapsed});
+      }
     }
   }
 
   function readWordmark() {
     logoDirty = false;
-    const bounds = wordmark.getBoundingClientRect();
-    if (!bounds.width || !bounds.height) { logo = null; return; }
+    const rect = wordmark.getBoundingClientRect();
+    if (!rect.width || !rect.height || !wordmarkLight) { logo = null; return; }
     const style = getComputedStyle(wordmark);
+    const font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const scale = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.ceil(rect.width * scale), h = Math.ceil(rect.height * scale);
+    wordmarkLight.style.transform = `translate(${rect.left - lightPadding}px, ${rect.top - lightPadding}px)`;
+    if (logo?.w === w && logo.h === h && logo.font === font && logo.scale === scale &&
+      logo.rect.width === rect.width && logo.rect.height === rect.height) {
+      logo.rect = rect;
+      return;
+    }
+    const stencil = document.createElement('canvas');
+    stencil.width = w;
+    stencil.height = h;
+    const ink = stencil.getContext('2d', {willReadFrequently:true});
+    lightCtx ??= wordmarkLight.getContext('2d');
+    if (!ink || !lightCtx) { logo = null; return; }
+    ink.setTransform(scale, 0, 0, scale, 0, 0);
+    ink.font = font;
     const size = parseFloat(style.fontSize);
-    if (logo && logo.size === size && logo.left === bounds.left && logo.top === bounds.top &&
-      logo.width === bounds.width && logo.height === bounds.height) return;
-    resetWordmarkMotion();
-    const measure = document.createElement('canvas').getContext('2d');
-    if (!measure) { logo = null; return; }
-    measure.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-
-    if (!wordmarkLetters.length) {
-      const glyphs = [];
-      const nodes = document.createTreeWalker(wordmark, NodeFilter.SHOW_TEXT);
-      const range = document.createRange();
-      while (nodes.nextNode()) {
-        const node = nodes.currentNode;
-        const blue = node.parentElement.closest('.wordmark-blue');
-        const blueBounds = blue?.getBoundingClientRect();
-        for (let i = 0; i < node.length; i++) {
-          range.setStart(node, i);
-          range.setEnd(node, i + 1);
-          glyphs.push({text:node.data[i], rect:range.getBoundingClientRect(), blueBounds});
-        }
-      }
-      const fragment = document.createDocumentFragment();
-      for (let i = 0; i < glyphs.length; i++) {
-        const glyph = glyphs[i];
-        const element = document.createElement('span');
-        element.className = glyph.blueBounds ? 'wordmark-letter wordmark-blue' : 'wordmark-letter';
-        element.textContent = glyph.text;
-        const advance = i + 1 < glyphs.length ? glyphs[i + 1].rect.left - glyph.rect.left : glyph.rect.width;
-        // Keep the original kerning and the continuous gradient across 3D.
-        wordmarkLetters.push({
-          element, text:glyph.text, advance:advance / size, pulses:[],
-          blue:glyph.blueBounds ? {
-            width:glyph.blueBounds.width / size, height:glyph.blueBounds.height / size,
-            x:(glyph.blueBounds.left - glyph.rect.left) / size,
-            y:(glyph.blueBounds.top - bounds.top) / size
-          } : null
-        });
-        fragment.append(element);
-      }
-      wordmark.replaceChildren(fragment);
-    }
-
-    const naturalWidths = wordmarkLetters.map(letter => letter.element.getBoundingClientRect().width);
-    for (let i = 0; i < wordmarkLetters.length; i++) {
-      const letter = wordmarkLetters[i];
-      letter.element.style.marginRight = `${letter.advance * size - naturalWidths[i]}px`;
-      if (letter.blue) {
-        letter.element.style.backgroundSize = `${letter.blue.width * size}px ${letter.blue.height * size}px`;
-        letter.element.style.backgroundPosition = `${letter.blue.x * size}px ${letter.blue.y * size}px`;
+    const metrics = ink.measureText(wordmark.textContent);
+    const ascent = metrics.fontBoundingBoxAscent ?? size * .8;
+    const descent = metrics.fontBoundingBoxDescent ?? size * .2;
+    const baseline = (rect.height + ascent - descent) * .5;
+    const nodes = document.createTreeWalker(wordmark, NodeFilter.SHOW_TEXT);
+    const range = document.createRange();
+    // Use the laid-out letter positions, including the colored 3D span.
+    while (nodes.nextNode()) {
+      const node = nodes.currentNode;
+      for (let i = 0; i < node.length; i++) {
+        range.setStart(node, i);
+        range.setEnd(node, i + 1);
+        ink.fillText(node.data[i], range.getBoundingClientRect().left - rect.left, baseline);
       }
     }
+    logo = {rect, w, h, font, size, scale, pixels:ink.getImageData(0, 0, w, h).data};
 
-    const font = measure.measureText('AutoWorks3D');
-    const ascent = font.fontBoundingBoxAscent ?? size * .8;
-    const descent = font.fontBoundingBoxDescent ?? size * .2;
-    const inkWidth = Math.ceil(Math.max(...naturalWidths)) + 2;
-    const inkHeight = Math.ceil(bounds.height) + 2;
-    measure.canvas.width = inkWidth;
-    measure.canvas.height = inkHeight;
-    measure.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-    for (const letter of wordmarkLetters) {
-      const box = letter.element.getBoundingClientRect();
-      const metrics = measure.measureText(letter.text);
-      const baseline = box.top + (box.height + ascent - descent) * .5;
-      letter.bounds = {
-        left:box.left - metrics.actualBoundingBoxLeft,
-        right:box.left + metrics.actualBoundingBoxRight,
-        top:baseline - metrics.actualBoundingBoxAscent,
-        bottom:baseline + metrics.actualBoundingBoxDescent
-      };
-      measure.clearRect(0, 0, inkWidth, inkHeight);
-      measure.fillText(letter.text, 0, baseline - box.top);
-      letter.ink = {left:box.left, top:box.top, width:inkWidth, height:inkHeight,
-        pixels:measure.getImageData(0, 0, inkWidth, inkHeight).data};
-    }
-    logo = {size, left:bounds.left, top:bounds.top, width:bounds.width, height:bounds.height};
+    const layerWidth = rect.width + lightPadding * 2;
+    const layerHeight = rect.height + lightPadding * 2;
+    wordmarkLight.width = Math.ceil(layerWidth * scale);
+    wordmarkLight.height = Math.ceil(layerHeight * scale);
+    wordmarkLight.style.width = `${wordmarkLight.width / scale}px`;
+    wordmarkLight.style.height = `${wordmarkLight.height / scale}px`;
+    lightCtx.setTransform(scale, 0, 0, scale, lightPadding * scale, lightPadding * scale);
   }
 
-  function whizzWordmark(shot, power = 1) {
-    if (!logo) return;
+  function inkAt(x, y) {
+    const px = x * logo.scale - .5, py = y * logo.scale - .5;
+    const col = Math.floor(px), row = Math.floor(py);
+    const fx = px - col, fy = py - row;
+    const sample = (cx, cy) => cx < 0 || cy < 0 || cx >= logo.w || cy >= logo.h
+      ? 0 : logo.pixels[(cy * logo.w + cx) * 4 + 3] / 255;
+    const top = sample(col, row) * (1 - fx) + sample(col + 1, row) * fx;
+    const bottom = sample(col, row + 1) * (1 - fx) + sample(col + 1, row + 1) * fx;
+    return top * (1 - fy) + bottom * fy;
+  }
+
+  function wordmarkContact(shot) {
+    if (!logo || shot.path.hitWordmark) return null;
+    const {rect} = logo;
+    const x0 = shot.x0 - rect.left, y0 = shot.y0 - rect.top;
+    const x1 = shot.x1 - rect.left, y1 = shot.y1 - rect.top;
+    if (Math.max(x0, x1) < 0 || Math.min(x0, x1) > rect.width ||
+      Math.max(y0, y1) < 0 || Math.min(y0, y1) > rect.height) return null;
     const dx = shot.x1 - shot.x0, dy = shot.y1 - shot.y0;
-    const travel = dx * dx + dy * dy;
-    if (!travel) return;
-    const steps = Math.max(1, Math.ceil(Math.sqrt(travel) / 1.5));
-    for (let i = 0; i < wordmarkLetters.length; i++) {
-      if (shot.path.passedLetters?.has(i)) continue;
-      const letter = wordmarkLetters[i];
-      const box = letter.bounds;
-      if (Math.max(shot.x0, shot.x1) < box.left || Math.min(shot.x0, shot.x1) > box.right ||
-        Math.max(shot.y0, shot.y1) < box.top || Math.min(shot.y0, shot.y1) > box.bottom) continue;
-      const ink = letter.ink;
-      let passesUnder = false;
-      for (let step = 0; step <= steps; step++) {
-        const x = Math.floor(shot.x0 + dx * step / steps - ink.left);
-        const y = Math.floor(shot.y0 + dy * step / steps - ink.top);
-        if (x >= 0 && y >= 0 && x < ink.width && y < ink.height &&
-          ink.pixels[(y * ink.width + x) * 4 + 3] > 80) {
-          passesUnder = true;
-          break;
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / .85));
+    let inside = inkAt(x0, y0) >= .5;
+    for (let i = 1; i <= steps; i++) {
+      const next = inkAt(x0 + dx * i / steps, y0 + dy * i / steps) >= .5;
+      if (!inside && next) {
+        // Resolve the edge between samples so the star reaches the letter before it stops.
+        let lo = (i - 1) / steps, hi = i / steps;
+        for (let step = 0; step < 4; step++) {
+          const mid = (lo + hi) * .5;
+          if (inkAt(x0 + dx * mid, y0 + dy * mid) >= .5) hi = mid;
+          else lo = mid;
         }
+        const t = (lo + hi) * .5;
+        const x = x0 + dx * t, y = y0 + dy * t;
+        const gx = inkAt(x + 1.8, y) - inkAt(x - 1.8, y);
+        const gy = inkAt(x, y + 1.8) - inkAt(x, y - 1.8);
+        const magnitude = Math.hypot(gx, gy);
+        const {ux, uy} = shot.path;
+        const normal = magnitude > .04 && gx * ux + gy * uy > 0;
+        const nx = normal ? gx / magnitude : ux, ny = normal ? gy / magnitude : uy;
+        return {x, y, t, nx, ny, incidence:clamp(nx * ux + ny * uy)};
       }
-      if (!passesUnder) continue;
-      shot.path.passedLetters ??= new Set();
-      shot.path.passedLetters.add(i);
-      if (letter.pulses.length === 2) letter.pulses.shift();
-      letter.pulses.push({time:elapsed, ux:shot.path.ux, uy:shot.path.uy, strength:power});
-      letter.element.classList.add('is-whizzing');
+      inside = next;
     }
+    return null;
   }
 
-  function updateWordmarkMotion() {
-    const amplitude = logo ? Math.min(3.2, logo.size * .032) : 0;
-    for (const letter of wordmarkLetters) {
-      if (!letter.pulses.length) continue;
-      let x = 0, y = 0, rotation = 0;
-      for (let i = letter.pulses.length - 1; i >= 0; i--) {
-        const pulse = letter.pulses[i];
-        const age = elapsed - pulse.time;
-        if (age >= .58) { letter.pulses.splice(i, 1); continue; }
-        const shiver = Math.sin(age * 40) * Math.exp(-age * 8) * (1 - ease(age / .58)) * 1.55 * pulse.strength;
-        x += shiver * amplitude * pulse.ux * .82;
-        y += shiver * amplitude * pulse.uy * .82;
-        rotation += shiver * .36 * (pulse.ux + pulse.uy * .35);
-      }
-      if (!letter.pulses.length) {
-        letter.element.style.transform = '';
-        letter.element.classList.remove('is-whizzing');
-      } else {
-        x = Math.max(-3.5, Math.min(3.5, x));
-        y = Math.max(-3.5, Math.min(3.5, y));
-        rotation = Math.max(-.55, Math.min(.55, rotation));
-        letter.element.style.transform = `translate(${x.toFixed(3)}px, ${y.toFixed(3)}px) rotate(${rotation.toFixed(3)}deg)`;
-      }
-    }
+  function strikeWordmark(shot, contact, amber = false) {
+    shot.path.hitWordmark = true;
+    if (wordmarkHits.length === 3) wordmarkHits.shift();
+    wordmarkHits.push({...contact, time:elapsed, amber, size:Math.min(17, logo.size * .113)});
+  }
+
+  function hideWordmarkImpact() {
+    if (wordmarkLight && !wordmarkLight.hidden) wordmarkLight.hidden = true;
+  }
+
+  function clearWordmarkHits() {
+    wordmarkHits.length = 0;
+    hideWordmarkImpact();
+  }
+
+  function paintChip(hit, age) {
+    const open = .44 + .56 * ease(age / .06);
+    const half = hit.size * (.94 + .10 * (1 - hit.incidence)) * open;
+    const depth = hit.size * (.34 + .13 * hit.incidence) * open;
+    const shoulder = Math.min(4, half * .62);
+    const setback = hit.size * .18 * open;
+    const rise = depth + setback;
+    const rimAngle = Math.asin(Math.max(-1, (setback - shoulder) / rise));
+    const rotation = Math.atan2(-hit.nx, hit.ny);
+    const chip = new Path2D();
+    // Keep the curved floor and close the oval just outside the letter edge.
+    chip.ellipse(hit.x - hit.nx * setback, hit.y - hit.ny * setback,
+      half, rise, rotation, rimAngle, Math.PI - rimAngle);
+    chip.closePath();
+
+    // The cut covers the original edge. A soft front reveals the letter from the inside out.
+    const refill = ease((age - .16) / (impactDuration - .16));
+    const curve = hit.size * 3;
+    const feather = .75 + hit.size * .1;
+    const x = hit.x - hit.nx * curve, y = hit.y - hit.ny * curve;
+    const deep = Math.hypot(curve + depth, half) + feather;
+    const edge = curve - shoulder - feather;
+    const front = deep + (edge - deep) * refill;
+    const recess = lightCtx.createRadialGradient(x, y, Math.max(0, front - feather), x, y, front + feather);
+    const leftLight = clamp(1 - (logo.rect.left + hit.x) / (width * .51));
+    const sky = width <= 600 ? '10, 17, 23' : `${5 + 5 * leftLight}, ${9 + 8 * leftLight}, ${14 + 9 * leftLight}`;
+    recess.addColorStop(0, `rgba(${sky}, 1)`);
+    recess.addColorStop(1, `rgba(${sky}, 0)`);
+    lightCtx.fillStyle = recess;
+    lightCtx.fill(chip);
+  }
+
+  function paintContactLight(hit, age) {
+    const pulse = Math.exp(-age * 16) * (1 - ease(age / .24));
+    if (pulse < .012) return;
+    const x = hit.x - hit.nx * 2.6, y = hit.y - hit.ny * 2.6;
+    const radius = Math.min(lightPadding - 2, 7 + hit.size * 1.14 + age * 21);
+    const tint = hit.amber ? '255, 168, 72' : '89, 211, 255';
+    const halo = lightCtx.createRadialGradient(x, y, 0, x, y, radius);
+    halo.addColorStop(0, `rgba(249, 253, 255, ${pulse * .99})`);
+    halo.addColorStop(.17, `rgba(211, 244, 255, ${pulse * .75})`);
+    halo.addColorStop(.42, `rgba(${tint}, ${pulse * .29})`);
+    halo.addColorStop(1, `rgba(${tint}, 0)`);
+    lightCtx.fillStyle = halo;
+    lightCtx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+  }
+
+  function drawWordmarkImpact() {
+    if (!logo || !wordmarkHits.length) { hideWordmarkImpact(); return; }
+    lightCtx.clearRect(-lightPadding, -lightPadding, wordmarkLight.width / logo.scale, wordmarkLight.height / logo.scale);
+    lightCtx.save();
+    for (const hit of wordmarkHits) paintChip(hit, elapsed - hit.time);
+    lightCtx.globalCompositeOperation = 'lighter';
+    for (const hit of wordmarkHits) paintContactLight(hit, elapsed - hit.time);
+    lightCtx.restore();
+    if (wordmarkLight.hidden) wordmarkLight.hidden = false;
   }
 
   function newMeteor() {
@@ -367,12 +393,14 @@
     if (previous === meteor.progress) return;
     const shot = sweep(meteor, previous * meteor.length, meteor.progress * meteor.length);
     crossTrails(shot.x0, shot.y0, shot.x1, shot.y1, .95, meteor);
-    whizzWordmark(shot, 1.12);
+    const surface = wordmarkContact(shot);
+    if (surface) strikeWordmark(shot, surface, true);
   }
 
   function advance() {
     if (!width || !height) return;
-    if (wordmark && logoDirty && wordmarkFontsReady && elapsed > 2.05) readWordmark();
+    if (wordmark && logoDirty && elapsed > 2.05) readWordmark();
+    while (wordmarkHits.length && elapsed - wordmarkHits[0].time >= impactDuration) wordmarkHits.shift();
     updatePaths();
     const moving = [];
     for (const path of paths) {
@@ -383,11 +411,9 @@
     collide(moving);
     for (const shot of moving) {
       crossTrails(shot.x0, shot.y0, shot.x1, shot.y1, 1, shot.path);
-      whizzWordmark(shot);
     }
     while (flashes.length && elapsed - flashes[0].time > .7) flashes.shift();
     updateMeteor();
-    updateWordmarkMotion();
   }
 
   function line(x0, y0, x1, y1) {
@@ -437,7 +463,6 @@
     gradient.addColorStop(center, `rgba(154, 217, 239, ${alpha})`);
     gradient.addColorStop(1, 'rgba(103, 187, 222, 0)');
     ctx.strokeStyle = gradient;
-    ctx.lineCap = 'round';
     // A displaced filament keeps drifting as it dissolves, with no spring-back.
     const drift = wake.lift * (11 + age * 5.5) * strength * direction;
     const steps = Math.max(6, Math.ceil((to - from) / 5));
@@ -485,18 +510,17 @@
       gradient.addColorStop(1, `rgba(210, 246, 255, ${strength})`);
     }
     ctx.strokeStyle = gradient;
-    ctx.lineCap = amber ? 'round' : 'butt';
     ctx.beginPath();
     ctx.moveTo(x0, y0);
     ctx.lineTo(x1, y1);
-    ctx.globalAlpha = amber ? .13 : .065;
-    ctx.lineWidth = amber ? 22 : 4;
+    ctx.globalAlpha = amber ? .13 : .12;
+    ctx.lineWidth = amber ? 22 : 9;
     ctx.stroke();
-    ctx.globalAlpha = amber ? .32 : .14;
-    ctx.lineWidth = amber ? 7 : 1.8;
+    ctx.globalAlpha = amber ? .32 : .2;
+    ctx.lineWidth = amber ? 7 : 3;
     ctx.stroke();
     ctx.globalAlpha = 1;
-    ctx.lineWidth = amber ? 2 : 1.1;
+    ctx.lineWidth = amber ? 2 : 1.2;
     ctx.stroke();
     if (amber) glow(x1, y1, 23, [
       [0, `rgba(255, 223, 167, ${strength * .48})`], [.23, `rgba(255, 152, 72, ${strength * .2})`], [1, 'rgba(255, 108, 36, 0)']
@@ -530,8 +554,9 @@
     ctx.lineCap = 'round';
     for (const path of paths) {
       for (const wake of path.wakes) drawSmoke(path, wake);
-      if (path.live && path.stoppedAt === null) {
-        drawHead(path, path.live.progress * path.length, Math.min(170, path.length * .22), .82);
+      if (path.live && (path.stoppedAt === null || path.hitWordmark)) {
+        const drain = path.stoppedAt === null ? 0 : ease((elapsed - path.stoppedAt) / .24);
+        drawHead(path, path.live.progress * path.length, Math.min(170, path.length * .22) * (1 - drain * .56), .82 * (1 - drain));
       }
     }
     for (const flash of flashes) {
@@ -544,6 +569,7 @@
     }
     drawMeteor();
     ctx.restore();
+    drawWordmarkImpact();
   }
 
   function resize() {
@@ -570,7 +596,7 @@
     makeStars();
     pointer = null;
     logoDirty = true;
-    resetWordmarkMotion();
+    clearWordmarkHits();
     flashes.length = 0;
     updatePaths();
     draw();
@@ -594,7 +620,7 @@
     pointer = null;
     document.body.classList.toggle('motion-paused', reducedMotion.matches);
     if (reducedMotion.matches) {
-      resetWordmarkMotion();
+      clearWordmarkHits();
       flashes.length = 0;
       for (const path of paths) path.wakes.length = 0;
       meteor = null;
@@ -611,7 +637,7 @@
   if (wordmark) {
     window.addEventListener('scroll', () => { logoDirty = true; }, {passive:true});
     wordmark.addEventListener('animationend', () => { logoDirty = true; });
-    document.fonts?.ready.then(() => { wordmarkFontsReady = true; logoDirty = true; });
+    document.fonts?.ready.then(() => { logo = null; logoDirty = true; });
   }
   window.addEventListener('pointermove', event => {
     if (reducedMotion.matches || document.hidden || !finePointer.matches || event.pointerType === 'touch') return;

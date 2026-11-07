@@ -18,7 +18,7 @@ No framework, package installation, build system, analytics, or backend is requi
 
 From this repository, run `python3 -m http.server 8000 --bind 127.0.0.1`, then visit `http://127.0.0.1:8000`. Check the page at both desktop and mobile widths and verify both shop links before publishing. `node --check assets/background.js` checks JavaScript syntax.
 
-Motion respects the operating system's reduced-motion preference and stops while the tab is hidden. Shop links remain usable without JavaScript. Shooting stars take a new route on each pass. A star or pointer crossing a visible trail disperses part of that trail, with a weaker response as it fades. Two stars that meet flash briefly and go out. Stars pass behind the wordmark and give nearby letters a brief shiver. An occasional amber meteor lights up a corner after it leaves the screen.
+Motion respects the operating system's reduced-motion preference and stops while the tab is hidden. Shop links remain usable without JavaScript. Shooting stars take a new route on each pass. A star or pointer crossing a visible trail disperses part of that trail, with a weaker response as it fades. Two stars that meet flash briefly and go out. A star that strikes the wordmark burns out and briefly chips the edge of the letter. An occasional amber meteor lights up a corner after it leaves the screen.
 
 ## Publishing
 
